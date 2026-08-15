@@ -1,0 +1,14 @@
+{
+  "id": "weather",
+  "name": "天气",
+  "version": "2.0.0",
+  "entry": "index.js",
+  "description": "Open-Meteo，无需 API key",
+  "icon": "☀",
+  "sizes": ["3x2", "3x3", "4x2", "4x3"],
+  "defaultSize": "3x2",
+  "settings": [
+    { "key": "city", "type": "text", "label": "城市", "desc": "留空则按 IP 自动定位", "default": "" },
+    { "key": "refreshMin", "type": "number", "label": "刷新间隔（分钟）", "min": 5, "max": 180, "step": 5, "default": 30 }
+  ]
+}

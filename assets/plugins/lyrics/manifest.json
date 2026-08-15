@@ -1,0 +1,39 @@
+{
+  "id": "lyrics",
+  "name": "歌词",
+  "version": "1.0.0",
+  "entry": "index.js",
+  "scripts": ["lrc.js"],
+  "description": "读系统正在播放的音乐，显示封面、进度与滚动歌词",
+  "icon": "🎵",
+  "sizes": ["4x2", "5x2", "6x2", "5x3", "6x3", "6x4", "7x4", "8x4"],
+  "defaultSize": "5x3",
+  "settings": [
+    {
+      "key": "source",
+      "type": "select",
+      "label": "歌词来源",
+      "desc": "网易云中文歌覆盖更好；LRCLIB 是开放歌词库，欧美歌更全",
+      "options": [
+        { "value": "auto", "label": "网易云优先，找不到再试 LRCLIB" },
+        { "value": "netease", "label": "只用网易云" },
+        { "value": "lrclib", "label": "只用 LRCLIB" }
+      ],
+      "default": "auto"
+    },
+    {
+      "key": "trans",
+      "type": "boolean",
+      "label": "显示翻译",
+      "desc": "只有网易云有翻译，且不是每首歌都有",
+      "default": false
+    },
+    {
+      "key": "credits",
+      "type": "boolean",
+      "label": "显示制作人员名单",
+      "desc": "网易云歌词开头那几行「作词/作曲/编曲」，关掉更清爽",
+      "default": false
+    }
+  ]
+}

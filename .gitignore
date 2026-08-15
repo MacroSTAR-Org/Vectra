@@ -1,0 +1,12 @@
+build/
+.dart_tool/
+*.iml
+
+# Visual Studio 打开项目时的本地设置
+.vs/
+
+# 打包产物：每次构建都会重出，没必要进仓库
+installer/out/
+
+# 官网源码：独立的 git 仓库，不属于本项目
+MS-WEB/

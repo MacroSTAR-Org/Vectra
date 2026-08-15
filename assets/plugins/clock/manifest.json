@@ -1,0 +1,14 @@
+{
+  "id": "clock",
+  "name": "时钟",
+  "version": "2.0.0",
+  "entry": "index.js",
+  "description": "数字时钟与日期",
+  "icon": "🕐",
+  "sizes": ["2x2", "3x2", "3x3", "4x2"],
+  "defaultSize": "2x2",
+  "settings": [
+    { "key": "seconds", "type": "boolean", "label": "显示秒", "default": false },
+    { "key": "hour24", "type": "boolean", "label": "24 小时制", "default": true }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "id": "todo",
+  "name": "待办",
+  "version": "2.0.0",
+  "entry": "index.js",
+  "description": "清单，数据存在本地",
+  "icon": "✓",
+  "sizes": ["2x3", "3x3", "3x4", "4x4"],
+  "defaultSize": "2x3",
+  "settings": [
+    { "key": "hideDone", "type": "boolean", "label": "隐藏已完成", "default": false }
+  ]
+}
