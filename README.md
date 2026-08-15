@@ -20,24 +20,6 @@ tool\build_release.bat
 - `build\windows\x64\runner\Release\`（整个文件夹就是发布版，解压即用）
 - `installer\out\Vectra-<版本号>-便携版.exe`
 
-## 版本号
-
-唯一出处是 `pubspec.yaml` 的 `version:`。那里写 `A.B.C+D`，在 Windows 上就是
-四段版本 `A.B.C.D`——exe 的文件版本、便携版包名、关于页、插件请求的
-User-Agent 全部由它派生，**不要在别处再写死一份**。
-
-当前基准 `0.1.1.120`。规矩：每加一个 git 节点，最后一段 +2。
-
-```
-0.1.1.120  ->  0.1.1.122  ->  0.1.1.124
-```
-
-也就是每次提交前把 `pubspec.yaml` 改成：
-
-```yaml
-version: 0.1.1+122
-```
-
 ## 测试
 
 ```
