@@ -26,3 +26,5 @@ tool\build_release.bat
 flutter test --no-pub
 node test/js/lrc_verify.js   # 歌词解析纯函数验证
 ```
+## 赞助
+[为爱发电](https://www.ifdian.net/a/ms_xh)
