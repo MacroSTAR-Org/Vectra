@@ -150,11 +150,13 @@ lw.register({
       // 只在没有旧歌词时设 loading（首次加载），有旧歌词时保留原状态，
       // 避免 lyricState 变化触发重绘导致闪白。
       if (!lyrics.length) lyricState = 'loading';
-      // 缓存键只用「标题|歌手」，**不含时长**。SMTC 报时长有个过程（先 0，
-      // 再真实值，偶尔还抖动一两秒），一旦把时长算进键，同一首歌会被反复
-      // 当成新歌重抓——线上实测有一首存了 6 份。抓歌词时照样用时长去匹配
-      // lrclib，那个精度不受影响。
-      var cacheKey = cacheKeyOf(title, artist);
+      // 缓存键就是这首歌的标识：标题|歌手|时长秒，含时长。
+      //
+      // 时长是版本的区分依据：同名同歌手的现场版与录音室版时长不同，歌词的
+      // 时间轴也对不上，共用一份缓存会串。代价是 SMTC 报时长有个过程（先 0，
+      // 再真实值，偶尔还抖动），同一首歌可能落成几个键、各自抓一次——用
+      // 缓存容量换准确度。
+      var cacheKey = key;
 
       ctx.storage.cacheGet(cacheKey).then(function (cached) {
         if (trackKey !== key) return;             // 加载期间已经换歌了
@@ -193,12 +195,6 @@ lw.register({
           paint(true);
         });
       });
-    }
-
-    /** 缓存键：标题|歌手，去掉首尾空白并转小写，免得大小写不同算两首 */
-    function cacheKeyOf(title, artist) {
-      return String(title || '').trim().toLowerCase() + '|' +
-             String(artist || '').trim().toLowerCase();
     }
 
     /**
