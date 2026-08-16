@@ -27,6 +27,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../core/logger.dart';
 import '../model/ai_settings.dart';
 import '../model/card.dart';
 import '../model/settings.dart';
@@ -161,7 +162,7 @@ class Store {
         m.removeWhere((_, v) => v == null);
         state.pluginData[id] = m;
       } catch (e) {
-        stderr.writeln('[store] 插件数据损坏，已跳过 $id: $e');
+        Log.w('store', '插件数据损坏，已跳过 $id: $e');
       }
     }
   }
@@ -184,11 +185,11 @@ class Store {
       for (final id in state.pluginData.keys) {
         await _writePluginFile(id, state.pluginData[id]!);
       }
-      stdout.writeln('[store] 已拆分旧 state.json -> config.json + '
+      Log.i('store', '已拆分旧 state.json -> config.json + '
           'plugindata/（${state.pluginData.length} 个插件），旧文件保留');
     } catch (e) {
       // 迁移失败就当没迁过：下次启动还会再试，绝不能因此清空用户配置
-      stderr.writeln('[store] 旧配置拆分失败（保持原样，不影响启动）: $e');
+      Log.w('store', '旧配置拆分失败（保持原样，不影响启动）: $e');
     }
   }
 
@@ -212,7 +213,7 @@ class Store {
       await Directory(dir).create(recursive: true);
       await _atomicWrite(_configFile, encodeConfig(state));
     } catch (e) {
-      stderr.writeln('[store] 配置保存失败: $e');
+      Log.e('store', '配置保存失败: $e');
     }
   }
 
@@ -248,7 +249,7 @@ class Store {
       await _atomicWrite(
           _pluginFile(id), const JsonEncoder.withIndent('  ').convert(data));
     } catch (e) {
-      stderr.writeln('[store] 插件数据保存失败 $id: $e');
+      Log.e('store', '插件数据保存失败 $id: $e');
     }
   }
 
@@ -263,7 +264,7 @@ class Store {
   /// 和 -_，这里再挡一道，免得将来有别的调用方绕过校验写出路径穿越。
   bool _safePluginId(String id) {
     if (id.isEmpty || id.contains(RegExp(r'[\\/:*?"<>|.]'))) {
-      stderr.writeln('[store] 非法的 pluginId，已拒绝: $id');
+      Log.w('store', '非法的 pluginId，已拒绝: $id');
       return false;
     }
     return true;
@@ -353,7 +354,7 @@ class Store {
       }
     } catch (e) {
       // 缓存写不进去不是错误，顶多下次重新抓
-      stderr.writeln('[store] 缓存写入失败 $pluginId: $e');
+      Log.w('store', '缓存写入失败 $pluginId: $e');
     }
   }
 
@@ -383,9 +384,9 @@ class Store {
           await files[i].f.delete();
         } catch (_) {}
       }
-      stdout.writeln('[store] $pluginId 缓存超过 $cacheMaxEntries 条，已淘汰 $drop 条');
+      Log.d('store', '$pluginId 缓存超过 $cacheMaxEntries 条，已淘汰 $drop 条');
     } catch (e) {
-      stderr.writeln('[store] 缓存淘汰失败 $pluginId: $e');
+      Log.w('store', '缓存淘汰失败 $pluginId: $e');
     }
   }
 

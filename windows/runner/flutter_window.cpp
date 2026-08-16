@@ -3,6 +3,7 @@
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 #include <dwmapi.h>
+#include <shellapi.h>  // ShellExecuteW（打开日志目录）
 #include <windowsx.h>  // GET_X_LPARAM / GET_Y_LPARAM
 
 #include <cstdio>
@@ -36,6 +37,19 @@ std::wstring CurrentExePath() {
   wchar_t buf[MAX_PATH]{};
   const DWORD n = ::GetModuleFileNameW(nullptr, buf, MAX_PATH);
   return std::wstring(buf, n);
+}
+
+// Dart 传过来的字符串都是 UTF-8，Win32 的 W 版 API 要 UTF-16。
+// utils.h 里只有反方向的 Utf8FromUtf16，这里补上正方向。
+std::wstring Utf8ToWide(const std::string& utf8) {
+  if (utf8.empty()) return std::wstring();
+  const int n = ::MultiByteToWideChar(CP_UTF8, 0, utf8.data(),
+                                      static_cast<int>(utf8.size()), nullptr, 0);
+  if (n <= 0) return std::wstring();
+  std::wstring out(static_cast<size_t>(n), L'\0');
+  ::MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()),
+                        out.data(), n);
+  return out;
 }
 
 // 读 Run 键里登记的命令行；没有则返回空串。
@@ -418,6 +432,23 @@ void HandleMethodCall(
     return;
   }
 
+  // 在资源管理器里打开日志目录（面板"关于"页那个按钮）。
+  //
+  // 目录不存在也照开：ShellExecute 会弹一个"找不到"的框，比"点了没反应"
+  // 清楚。真正的日志目录在第一条日志写下去时就建好了，正常不会缺。
+  if (call.method_name() == "openLogDir") {
+    const auto* dir = std::get_if<std::string>(call.arguments());
+    if (!dir || dir->empty()) {
+      result->Error("bad_args", "openLogDir 需要目录路径");
+      return;
+    }
+    const std::wstring wdir = Utf8ToWide(*dir);
+    ::ShellExecuteW(nullptr, L"open", wdir.c_str(), nullptr, nullptr,
+                    SW_SHOWNORMAL);
+    result->Success();
+    return;
+  }
+
   if (call.method_name() == "getWindowRect") {
     RECT rect{};
     ::GetWindowRect(hwnd, &rect);
@@ -543,6 +574,14 @@ FlutterWindow::~FlutterWindow() {
   if (g_main_window == this) g_main_window = nullptr;
 }
 
+void FlutterWindow::Log(const std::string& message) {
+  // 引擎还没起来时（OnCreate 之前）通道是空的，那阶段的日志只能丢——
+  // 但那之前 native 也确实没什么可说的。
+  if (!method_channel_) return;
+  method_channel_->InvokeMethod(
+      "log", std::make_unique<flutter::EncodableValue>(message));
+}
+
 void FlutterWindow::OpenAiPanel() {
   // 侧边栏点齿轮时走这条。两个 Flutter 引擎不共享 isolate，Dart 之间没有
   // 直接通路，只能穿过 native 传话。
@@ -613,8 +652,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   // --test-openpanel 的定时器：模拟侧边栏点齿轮，走一遍跨引擎打开面板的链路
   if (message == WM_TIMER && wparam == 0x5150) {
     KillTimer(hwnd, 0x5150);
-    printf("[test] 触发跨引擎打开面板\n");
-    fflush(stdout);
+    Log("触发跨引擎打开面板（--test-openpanel）");
     OpenAiPanel();
     return 0;
   }
@@ -633,9 +671,12 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
     const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
     const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-    printf("[display] WM_DISPLAYCHANGE new virtual=%d,%d %dx%d\n", vx, vy,
-           vw, vh);
-    fflush(stdout);
+    {
+      char buf[128];
+      std::snprintf(buf, sizeof(buf),
+                    "WM_DISPLAYCHANGE 新虚拟屏=%d,%d %dx%d", vx, vy, vw, vh);
+      Log(buf);
+    }
     SetWindowPos(hwnd, HWND_BOTTOM, vx, vy, vw, vh, SWP_NOACTIVATE);
     if (method_channel_) {
       method_channel_->InvokeMethod(

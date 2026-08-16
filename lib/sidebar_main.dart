@@ -22,6 +22,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import 'ai/chat_client.dart';
+import 'core/logger.dart';
 import 'core/paths.dart';
 import 'model/ai_settings.dart';
 import 'ui/ai_sidebar.dart';
@@ -37,6 +38,10 @@ String get _dir => AppPaths.root;
 @pragma('vm:entry-point')
 void sidebarMain() {
   WidgetsFlutterBinding.ensureInitialized();
+  // 侧边栏是独立引擎，日志要和主引擎错开文件名，否则两边并发追加同一个文件
+  // 会互相插队。目录仍是同一个 userdata\logs\，排查时一起拷走。
+  Log.init(engine: 'sidebar', dir: AppPaths.logsDir);
+  Log.i('sidebar', '侧边栏引擎启动');
   runApp(const _SidebarApp());
 }
 
@@ -109,7 +114,7 @@ class _SidebarHostState extends State<_SidebarHost> {
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'reload') {
         // 控制面板改完 AI 配置会走这条：立刻生效，不用等下次唤出
-        stdout.writeln('[sidebar] 重新读配置');
+        Log.i('sidebar', '重新读配置');
         await _reload();
         await _applyDock();
       }
@@ -120,7 +125,7 @@ class _SidebarHostState extends State<_SidebarHost> {
       }
       if (call.method == 'shown') {
         final on = call.arguments == true;
-        stdout.writeln('[sidebar] shown=$on');
+        Log.i('sidebar', 'shown=$on');
         if (on) {
           // 先切成展开态再去读配置抓背景：这两步是异步的，中间那几十毫秒
           // 如果还画着投放点，窗口区域已经放开、画的却还是小方块，
@@ -145,10 +150,11 @@ class _SidebarHostState extends State<_SidebarHost> {
         }
       }
       if (call.method == 'log') {
-        stdout.writeln('[sidebar] ${call.arguments}');
+        // native（sidebar_window.cpp）转发过来的日志，统一进这边的文件
+        Log.native('${call.arguments}');
       }
       if (call.method == 'requestClose') {
-        stdout.writeln('[sidebar] requestClose');
+        Log.i('sidebar', 'requestClose');
         await _animateOut();
       }
       if (call.method == 'dropHover') {
@@ -160,7 +166,7 @@ class _SidebarHostState extends State<_SidebarHost> {
         final paths = [
           for (final v in (call.arguments as List? ?? const [])) '$v'
         ];
-        stdout.writeln('[sidebar] 拖入 ${paths.length} 个文件');
+        Log.i('sidebar', '拖入 ${paths.length} 个文件');
         SidebarDrop.push(paths);
       }
       return null;
@@ -180,7 +186,7 @@ class _SidebarHostState extends State<_SidebarHost> {
       final pinned = await _channel.invokeMethod<bool>('isPinned') ?? false;
       if (mounted && pinned != _pinned) setState(() => _pinned = pinned);
     } catch (_) {}
-    stdout.writeln('[sidebar] 启动时可见=$visible');
+    Log.i('sidebar', '启动时可见=$visible');
     if (visible) {
       if (mounted) setState(() => _expanded = true);
       await _loadBackdrop();
@@ -191,9 +197,9 @@ class _SidebarHostState extends State<_SidebarHost> {
   Future<void> _applyDock() async {
     try {
       await _channel.invokeMethod('setDock', _settings.dock);
-      stdout.writeln('[sidebar] 投放点=${_settings.dock}');
+      Log.i('sidebar', '投放点=${_settings.dock}');
     } catch (e) {
-      stderr.writeln('[sidebar] setDock 失败: $e');
+      Log.w('sidebar', 'setDock 失败: $e');
     }
   }
 
@@ -255,7 +261,7 @@ class _SidebarHostState extends State<_SidebarHost> {
       Wallpaper.image.value?.dispose();
       Wallpaper.image.value = blurred;
     } catch (e) {
-      stderr.writeln('[sidebar] 背景抓取失败: $e');
+      Log.w('sidebar', '背景抓取失败: $e');
     }
   }
 
@@ -264,7 +270,7 @@ class _SidebarHostState extends State<_SidebarHost> {
   void _setPinned(bool on) {
     setState(() => _pinned = on);
     _channel.invokeMethod('setPinned', on);
-    stdout.writeln('[sidebar] 钉住=$on');
+    Log.i('sidebar', '钉住=$on');
   }
 
   /// 点齿轮：让磁贴那个引擎把控制面板打开到 AI 页，自己再收起。
@@ -274,7 +280,7 @@ class _SidebarHostState extends State<_SidebarHost> {
     try {
       await _channel.invokeMethod('openPanel');
     } catch (e) {
-      stderr.writeln('[sidebar] 打开面板失败: $e');
+      Log.w('sidebar', '打开面板失败: $e');
     }
     await _animateOut();
   }
@@ -366,7 +372,7 @@ class _SidebarHostState extends State<_SidebarHost> {
       await _chatFile
           .writeAsString(jsonEncode(keep.map((m) => m.toJson()).toList()));
     } catch (e) {
-      stderr.writeln('[sidebar] 聊天记录保存失败: $e');
+      Log.w('sidebar', '聊天记录保存失败: $e');
     }
   }
 
@@ -382,7 +388,7 @@ class _SidebarHostState extends State<_SidebarHost> {
     // 打出的是 380x892 dpr=1.5（完全正确），屏幕上却只画了 242 物理像素。
     if (size != _lastLoggedSize) {
       _lastLoggedSize = size;
-      stdout.writeln('[sidebar] 视口 ${size.width}x${size.height} '
+      Log.d('sidebar', '视口 ${size.width}x${size.height} '
           'dpr=${mq.devicePixelRatio}');
     }
 

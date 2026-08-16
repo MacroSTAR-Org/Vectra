@@ -4,12 +4,12 @@
 /// 窗口区域被裁成"所有卡片圆角矩形的并集"，区域外的点击自然落到桌面。
 library;
 
-import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
 import 'core/app_version.dart';
+import 'core/logger.dart';
 import 'core/paths.dart';
 import 'model/card.dart';
 import 'native/native_bridge.dart';
@@ -30,34 +30,40 @@ void sidebarMain() => sidebar.sidebarMain();
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  stdout.writeln('[app] 启动参数: ${args.join(" ")}');
+  // 日志系统就绪后再干别的，后面每一行才能进文件
+  Log.init(engine: 'main', dir: AppPaths.logsDir);
+  // --verbose：把 debug 级日志也打出来（贴到文件里），排查用
+  if (args.contains('--verbose')) {
+    Log.setLevel(LogLevel.debug);
+  }
+  Log.i('app', '启动参数: ${args.join(" ")}');
 
   // 版本号缓存一份，插件请求的 User-Agent 要用（同步取，不能 await）
   await initAppVersion();
-  stdout.writeln('[app] 版本: $appVersion');
+  Log.i('app', '版本: $appVersion');
 
   // 用户数据一律放在 exe 同目录的 userdata\ 下（便携优先，见 AppPaths）。
   // 目录不可写就明确报错——静默失败会让用户改完设置莫名其妙丢掉。
   final pathError = await AppPaths.ensureWritable();
   if (pathError != null) {
-    stderr.writeln('[app] $pathError');
+    Log.e('app', pathError);
   }
   // 旧版数据在 %APPDATA%\LiquidWidgets，首次启动搬过来（不删旧的）
   if (await AppPaths.migrateFromLegacy()) {
-    stdout.writeln('[app] 已从旧位置搬迁用户数据 -> ${AppPaths.root}');
+    Log.i('app', '已从旧位置搬迁用户数据 -> ${AppPaths.root}');
   }
 
   final dir = AppPaths.root;
-  stdout.writeln('[app] 用户数据目录: $dir');
+  Log.i('app', '用户数据目录: $dir');
   final store = Store(dir);
   final state = await store.load();
 
   final registry = PluginRegistry(AppPaths.pluginsDir);
   await registry.scan();
   if (registry.errors.isNotEmpty) {
-    registry.errors.forEach((k, v) => stderr.writeln('[plugin] 加载失败 $k: $v'));
+    registry.errors.forEach((k, v) => Log.e('plugin', '加载失败 $k: $v'));
   }
-  stdout.writeln('[plugin] 已加载 ${registry.list().length} 个: '
+  Log.i('plugin', '已加载 ${registry.list().length} 个: '
       '${registry.list().map((m) => m.id).join(", ")}');
 
   if (state.cards.isEmpty) {
@@ -122,19 +128,19 @@ class _MultiViewRootState extends State<_MultiViewRoot> {
   Future<void> _createPanelView() async {
     final engineId = ui.PlatformDispatcher.instance.engineId;
     if (engineId == null) {
-      stderr.writeln('[panel] 拿不到 engineId，设置窗口起不来');
+      Log.e('panel', '拿不到 engineId，设置窗口起不来');
       return;
     }
     final viewId = await NativeBridge.createPanelView(engineId);
     if (viewId < 0) {
-      stderr.writeln('[panel] native 建视图失败');
+      Log.e('panel', 'native 建视图失败');
       return;
     }
     // 视图注册进 PlatformDispatcher 是异步的，等它出现
     for (var i = 0; i < 40; i++) {
       for (final v in ui.PlatformDispatcher.instance.views) {
         if (v.viewId == viewId) {
-          stdout.writeln('[panel] 设置窗口视图就绪 viewId=$viewId');
+          Log.i('panel', '设置窗口视图就绪 viewId=$viewId');
           if (mounted) setState(() => _panelView = v);
           if (widget.openPanel) NativeBridge.showPanelWindow();
           return;
@@ -142,7 +148,7 @@ class _MultiViewRootState extends State<_MultiViewRoot> {
       }
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
-    stderr.writeln('[panel] 等了 2 秒，viewId=$viewId 仍未出现在 views 里');
+    Log.e('panel', '等了 2 秒，viewId=$viewId 仍未出现在 views 里');
   }
 
   @override

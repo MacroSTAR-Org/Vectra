@@ -11,7 +11,6 @@ import 'package:flutter/services.dart';
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
@@ -19,6 +18,7 @@ import 'package:path/path.dart' as p;
 import '../ai/chat_client.dart';
 import '../ai/file_parser.dart';
 import '../ai/tools.dart';
+import '../core/logger.dart';
 import '../model/ai_settings.dart';
 import 'wallpaper.dart';
 
@@ -349,7 +349,7 @@ class _AiSidebarState extends State<AiSidebar> {
       await _attachPaths(
           [for (final f in res.files) if (f.path != null) f.path!]);
     } catch (e) {
-      stderr.writeln('[ai] 选文件失败: $e');
+      Log.w('ai', '选文件失败: $e');
     }
   }
 

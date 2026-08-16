@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_version.dart';
+import '../core/logger.dart';
 import '../model/card.dart';
 import '../native/native_bridge.dart';
 import '../store/store.dart';
@@ -87,8 +88,7 @@ class PluginHost {
 
       case 'toast':
         // 目前只落日志。真正的 toast UI 等面板做好再接。
-        // ignore: avoid_print
-        print('[plugin:$pluginId] ${args['message']}');
+        Log.i('plugin', '$pluginId: ${args['message']}');
         return true;
 
       case 'openExternal':
@@ -157,7 +157,11 @@ class PluginHost {
       }
       return {'ok': true, 'data': jsonDecode(utf8.decode(res.bodyBytes))};
     } catch (e) {
-      return {'ok': false, 'error': '$e'};
+      // 异常文本里常常带着完整请求 URL，而 URL 的 query 可能含密钥
+      // （插件自己拼的接口地址不受我们控制）。回给插件的错误只保留主机名，
+      // 真正的诊断信息进日志——日志那边还有一道统一脱敏兜底。
+      Log.w('plugin', '$pluginId 请求失败 ${uri.host}${uri.path}: $e');
+      return {'ok': false, 'error': '请求失败：${uri.host}'};
     }
   }
 

@@ -17,6 +17,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import '../core/logger.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
@@ -77,7 +79,7 @@ class Wallpaper {
       }
       if (src == null) {
         source.value = '失败：既抓不到桌面，也读不到壁纸文件';
-        stdout.writeln('[wallpaper] 桌面捕获与壁纸文件都失败');
+        Log.w('wallpaper', '桌面捕获与壁纸文件都失败');
         return;
       }
 
@@ -91,11 +93,13 @@ class Wallpaper {
       image.value = blurred;
       source.value = from;
       brightness.value = await _avgBrightness(blurred);
-      stdout.writeln('[wallpaper] 来源=$from '
+      // 动态壁纸下这条会按刷新间隔反复打，归 debug：默认级别看不到，
+      // 需要时用 --verbose 打开
+      Log.d('wallpaper', '来源=$from '
           '尺寸=${blurred.width}x${blurred.height} '
           '(抓取${lastCaptureMs}ms 模糊${lastBlurMs}ms)');
     } catch (e) {
-      stderr.writeln('[wallpaper] 刷新失败: $e');
+      Log.w('wallpaper', '刷新失败: $e');
     } finally {
       _busy = false;
     }
@@ -127,7 +131,7 @@ class Wallpaper {
         totalMs += sw.elapsedMilliseconds;
         if (frames % 60 == 0) {
           final fps = frames * 1000 / wall.elapsedMilliseconds;
-          stdout.writeln('[wallpaper] 目标 ${ms}ms  实测 '
+          Log.d('wallpaper', '目标 ${ms}ms  实测 '
               '${(totalMs / frames).toStringAsFixed(1)}ms/帧  '
               '实际 ${fps.toStringAsFixed(1)} fps  '
               '(抓取 ${lastCaptureMs}ms / 模糊 ${lastBlurMs}ms)');
@@ -160,7 +164,7 @@ class Wallpaper {
           bytes, w, h, ui.PixelFormat.bgra8888, completer.complete);
       return await completer.future;
     } catch (e) {
-      stderr.writeln('[wallpaper] 桌面捕获失败: $e');
+      Log.w('wallpaper', '桌面捕获失败: $e');
       return null;
     }
   }

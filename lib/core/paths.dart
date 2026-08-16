@@ -18,6 +18,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'logger.dart';
+
 class AppPaths {
   AppPaths._();
 
@@ -31,6 +33,9 @@ class AppPaths {
 
   /// 第三方插件：`<exe>\userdata\plugins\<id>\`
   static String get pluginsDir => p.join(root, 'plugins');
+
+  /// 日志目录：`<exe>\userdata\logs`。logger 按天切分，保留 7 天
+  static String get logsDir => p.join(root, 'logs');
 
   /// 旧版位置 %APPDATA%\LiquidWidgets，仅用于首次启动搬迁
   static String? get legacyRoot {
@@ -86,7 +91,7 @@ class AppPaths {
       }
       return true;
     } catch (e) {
-      stderr.writeln('[paths] 旧配置搬迁失败（不影响启动，将从空配置开始）: $e');
+      Log.w('paths', '旧配置搬迁失败（不影响启动，将从空配置开始）: $e');
       return false;
     }
   }

@@ -22,6 +22,7 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/paths.dart';
 import '../core/theme.dart';
 import '../model/ai_settings.dart';
 import '../model/card.dart';
@@ -1676,6 +1677,28 @@ class _ControlPanelState extends State<ControlPanel> {
         _group(title: '信息', icon: Icons.info_outline, children: [
           _aboutRow('作者', 'MacroSTAR Studio © 2026'),
           _aboutRow('数据', widget.store.dir, monospace: true),
+          _aboutRow('日志', AppPaths.logsDir, monospace: true),
+          // 报问题时最费劲的一步是"日志在哪"。给个按钮直接开到目录，
+          // 用户把那几个 .log 拖出来就行。
+          //
+          // 按钮和说明分两行：面板可以被拖得很窄，挤在一行里说明文字会把
+          // Row 撑破（实测 404px 宽就溢出）。窄到一定程度谁都放不下，
+          // 与其压缩不如换行。
+          Padding(
+            padding: const EdgeInsets.only(top: 2, left: 52),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Button(
+                  onPressed: () => NativeBridge.openLogDir(AppPaths.logsDir),
+                  child: const Text('打开日志目录'),
+                ),
+                const SizedBox(height: 6),
+                Text('按天分文件，保留最近 7 天',
+                    style: TextStyle(fontSize: 11, color: _c.ink38)),
+              ],
+            ),
+          ),
         ]),
         _group(title: '项目', icon: Icons.link_outlined, children: [
           Padding(

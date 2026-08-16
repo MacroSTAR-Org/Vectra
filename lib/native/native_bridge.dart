@@ -7,6 +7,7 @@ library;
 import 'package:flutter/services.dart';
 
 import '../core/hit.dart';
+import '../core/logger.dart';
 import '../core/snap.dart' as snap;
 
 class NativeBridge {
@@ -112,10 +113,20 @@ class NativeBridge {
           _onDisplayChanged?.call();
         case 'themeChanged':
           _onThemeChanged?.call();
+        case 'log':
+          // C++ 侧的日志。native 自己不落盘（发布版没有控制台，printf 全丢），
+          // 统一转到 Dart 这边进同一个日志文件。
+          Log.native('${call.arguments ?? ''}');
       }
       return null;
     });
   }
+
+  /// 在资源管理器里打开日志目录（面板"关于"页那个按钮）。
+  ///
+  /// 不能复用插件的 openExternal：那条只放行 http/https，本地目录会被挡掉。
+  static Future<void> openLogDir(String dir) =>
+      _channel.invokeMethod<void>('openLogDir', dir);
 
   /// 当前所有显示器的物理矩形 + 设备名。多显示器适配用。
   static Future<List<({String id, int x, int y, int w, int h})>>

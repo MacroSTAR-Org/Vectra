@@ -105,4 +105,47 @@ void main() {
     // Store 自己有 300ms 落盘去抖，不放掉的话测试会因"仍有未完成的 Timer"失败
     await tester.pump(const Duration(milliseconds: 400));
   });
+
+  testWidgets('关于页给出日志目录和打开按钮（报问题时第一步就是找日志）',
+      (tester) async {
+    // 按钮点下去会调 native 的 openLogDir，这里记下有没有真的发出去
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('vectra/native'),
+            (call) async {
+      calls.add(call);
+      return null;
+    });
+
+    final state = AppState(settings: AppSettings(), cards: []);
+    final store = Store(Directory.systemTemp.createTempSync('lw-panel3').path);
+
+    await tester.pumpWidget(FluentApp(
+      home: ControlPanel(
+        state: state,
+        store: store,
+        registry:
+            PluginRegistry(Directory.systemTemp.createTempSync('lw-reg').path),
+        initialTab: 5, // 关于页
+        onClose: () {},
+        onChanged: () {},
+        onAdd: (_) {},
+        onRemove: (_) {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('日志'), findsOneWidget, reason: '关于页要显示日志目录在哪');
+
+    final btn = find.widgetWithText(Button, '打开日志目录');
+    expect(btn, findsOneWidget);
+
+    await tester.tap(btn);
+    await tester.pump();
+
+    expect(calls.where((c) => c.method == 'openLogDir'), isNotEmpty,
+        reason: '按钮要真的让 native 打开目录，不能只是个摆设');
+
+    await tester.pump(const Duration(milliseconds: 400));
+  });
 }

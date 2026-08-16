@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:tray_manager/tray_manager.dart';
 
 import '../core/grid.dart';
+import '../core/logger.dart';
 import '../core/snap.dart' as snap;
 import '../core/theme.dart';
 import '../model/ai_settings.dart';
@@ -132,7 +133,7 @@ class AppRootState extends State<AppRoot> with TrayListener {
       if (monitors.isNotEmpty) _lastMonitors = monitors;
       _lastWindowRect = winRect;
     } catch (e) {
-      stderr.writeln('[app] 显示器初始化失败: $e');
+      Log.w('app', '显示器初始化失败: $e');
     }
   }
 
@@ -197,11 +198,11 @@ class AppRootState extends State<AppRoot> with TrayListener {
         widget.store.save(widget.state);
         if (mounted) setState(() => _revision++);
         _surfaceKey.currentState?.pushRegion();
-        stdout.writeln('[app] 显示器变化，卡片已重摆');
+        Log.i('app', '显示器变化，卡片已重摆');
       }
       _loadWallpaper();
     } catch (e) {
-      stderr.writeln('[app] 显示器适配失败: $e');
+      Log.w('app', '显示器适配失败: $e');
     }
   }
 
@@ -241,7 +242,11 @@ class AppRootState extends State<AppRoot> with TrayListener {
         ? '已注册：${ai.hotkeyLabel()}'
         : '注册失败：${ai.hotkeyLabel()} 已被别的程序占用，换一个组合';
     hotkeyStatus.value = msg;
-    stdout.writeln('[ai] $msg');
+    if (ok) {
+      Log.i('ai', msg);
+    } else {
+      Log.w('ai', msg);
+    }
   }
 
 
@@ -298,6 +303,10 @@ class AppRootState extends State<AppRoot> with TrayListener {
         // 插件数据是各自去抖的（待办勾选完立刻退出就会丢），一并刷盘。
         await widget.store.saveNow(widget.state);
         await widget.store.flushPluginData();
+        // 日志也是攒一批再写的，不刷这一下最后几行就随进程一起没了——
+        // 而"退出前发生了什么"恰恰是最需要看的那几行。
+        Log.i('app', '退出');
+        await Log.flushLogs();
         await trayManager.destroy();
         exit(0);
     }
@@ -379,7 +388,7 @@ class AppRootState extends State<AppRoot> with TrayListener {
     // 一种组件每块屏最多一个：挑一块还空着的，没有就别加
     final target = _freeMonitorFor(plugin.id);
     if (target == null) {
-      stdout.writeln('[app] ${plugin.id} 每块屏都已放置，忽略本次添加');
+        Log.i('app', '${plugin.id} 每块屏都已放置，忽略本次添加');
       return;
     }
 

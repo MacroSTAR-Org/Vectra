@@ -7,6 +7,7 @@
 #include <flutter/standard_method_codec.h>
 
 #include <memory>
+#include <string>
 
 #include "win32_window.h"
 
@@ -27,6 +28,13 @@ class FlutterWindow : public Win32Window {
 
   // 让磁贴那个引擎打开控制面板并定位到 AI 页
   void OpenAiPanel();
+
+  // 把一行日志转给 Dart，由那边统一落进 userdata\logs\。
+  //
+  // C++ 这边的 printf 在发布版是丢的：GUI 子系统没有控制台，
+  // main.cpp 只在有父控制台或调试器时才 attach（实测 sidebar_window
+  // 里早就因此改走 Dart 通道了）。日志系统统一收口后，native 也走这条。
+  void Log(const std::string& message);
 
  protected:
   // Win32Window:

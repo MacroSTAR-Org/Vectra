@@ -10,7 +10,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart'
@@ -19,6 +18,7 @@ import 'package:flutter/material.dart';
 
 import '../core/grid.dart';
 import '../core/hit.dart';
+import '../core/logger.dart';
 import '../core/snap.dart' as snap;
 import '../model/card.dart';
 import '../model/settings.dart';
@@ -110,7 +110,7 @@ class DesktopSurfaceState extends State<DesktopSurface> {
       }
     }
     if (changed) {
-      stdout.writeln('[surface] 有卡片超出可视区，已拉回');
+      Log.i('surface', '有卡片超出可视区，已拉回');
       widget.store.save(widget.state);
       setState(() {});
     }
