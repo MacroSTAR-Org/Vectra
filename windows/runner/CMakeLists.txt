@@ -14,6 +14,7 @@ add_executable(${BINARY_NAME} WIN32
   "panel_window.cpp"
   "sidebar_window.cpp"
   "smtc.cpp"
+  "splash_window.cpp"
   "main.cpp"
   "utils.cpp"
   "win32_window.cpp"

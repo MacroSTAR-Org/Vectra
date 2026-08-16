@@ -198,6 +198,15 @@ class NativeBridge {
   static Future<void> panelResize(int edge) =>
       _channel.invokeMethod<void>('panelResize', edge);
 
+  /// 启动幕布的加载进度。ready/total 是"已就绪的卡片数 / 总卡片数"。
+  static Future<void> splashProgress(int ready, int total) =>
+      _channel.invokeMethod<void>(
+          'splashProgress', {'ready': ready, 'total': total});
+
+  /// 全部就绪，让启动幕布收尾淡出。
+  static Future<void> splashFinish() =>
+      _channel.invokeMethod<void>('splashFinish');
+
   /// 通知侧边栏那个引擎重新读一遍配置。
   /// 两个引擎不共享 isolate，AI 配置由本引擎写进 config.json，
   /// 不喊一声的话侧边栏要等到下次唤出才知道变了。

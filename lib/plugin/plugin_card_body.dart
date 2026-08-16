@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../core/grid.dart';
+import '../core/splash_gate.dart';
 import '../model/card.dart';
 import '../store/store.dart';
 import 'host.dart';
@@ -55,6 +56,9 @@ class _PluginCardBodyState extends State<PluginCardBody> {
     final loaded = widget.registry[widget.card.pluginId];
     if (loaded == null) {
       setState(() => _loadError = '找不到插件「${widget.card.pluginId}」');
+      // 加载不出来也算"到最终形态了"，得让启动幕布知道，
+      // 否则一个坏插件就能把幕布一直挂在那儿
+      SplashGate.reportReady(widget.card.id);
       return;
     }
 
@@ -94,6 +98,9 @@ class _PluginCardBodyState extends State<PluginCardBody> {
       return;
     }
     setState(() => _runtime = rt);
+    // 插件已经编译并跑出第一棵 UI 树，这张卡到此就算渲染好了。
+    // 插件自己的网络请求不在等待范围内（见 SplashGate 的说明）。
+    SplashGate.reportReady(widget.card.id);
   }
 
   @override

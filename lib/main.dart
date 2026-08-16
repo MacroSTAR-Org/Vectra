@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'core/app_version.dart';
 import 'core/logger.dart';
 import 'core/paths.dart';
+import 'core/splash_gate.dart';
 import 'model/card.dart';
 import 'native/native_bridge.dart';
 import 'plugin/registry.dart';
@@ -70,6 +71,9 @@ Future<void> main(List<String> args) async {
     state.cards.addAll(_defaultLayout());
     await store.saveNow(state);
   }
+
+  // 启动幕布的进度以"卡片张数"计，得在播种默认布局之后才拍这个快照
+  SplashGate.start(state.cards.length);
 
   // runWidget 而不是 runApp：这个进程要开两个窗口——覆盖整个虚拟屏幕的磁贴层，
   // 和任务栏里那个独立的设置窗口。两个窗口共用**同一个引擎、同一个 isolate**，

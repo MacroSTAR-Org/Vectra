@@ -19,6 +19,7 @@
 #include "panel_window.h"
 #include "sidebar_window.h"
 #include "smtc.h"
+#include "splash_window.h"
 #include "utils.h"
 
 namespace {
@@ -27,6 +28,11 @@ constexpr const char kChannelName[] = "vectra/native";
 
 // 全局快捷键的标识。只用一个，改快捷键时先注销再重注册。
 constexpr int kHotkeyId = 1;
+
+// 揭幕兜底：从窗口创建起最多等这么久，就算 Dart 没报"全部就绪"也把磁贴
+// 显示出来。比 splash 自己的 4 秒超时留得宽一点，正常情况轮不到它。
+constexpr UINT_PTR kRevealFallbackTimer = 2;
+constexpr UINT kRevealFallbackMs = 8000;
 
 // 开机自启走 HKCU 的 Run 键：不需要管理员权限，也不用装计划任务。
 constexpr const wchar_t kRunKeyPath[] =
@@ -423,6 +429,41 @@ void HandleMethodCall(
     result->Success();
     return;
   }
+  // 启动幕布：Dart 侧每加载好一张卡片就报一次，全好了报 splashFinish
+  if (call.method_name() == "splashProgress") {
+    const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+    if (!args) {
+      result->Error("bad_args", "expected {ready, total}");
+      return;
+    }
+    // 整数要把 int32/int64/double 都认下来：Dart 的 int 经标准编解码器出来
+    // 是哪一种取决于取值范围，只认 int32 的话大一点的数就静默变成 0
+    // （实测就是这么把进度卡在 0/0 的，见 setRegion 里同样的写法）。
+    auto pick = [&](const char* key) -> int {
+      auto it = args->find(flutter::EncodableValue(key));
+      if (it == args->end()) return 0;
+      if (const auto* v = std::get_if<int32_t>(&it->second)) return *v;
+      if (const auto* v64 = std::get_if<int64_t>(&it->second))
+        return static_cast<int>(*v64);
+      if (const auto* d = std::get_if<double>(&it->second))
+        return static_cast<int>(*d);
+      return 0;
+    };
+    SplashWindow::instance()->SetProgress(pick("ready"), pick("total"));
+    result->Success();
+    return;
+  }
+  if (call.method_name() == "splashFinish") {
+    SplashWindow* splash = SplashWindow::instance();
+    splash->Finish();
+    // 幕布正常在的话，揭幕交给它在拉开的那一刻发消息过来；万一它压根没建起来
+    // （建窗失败等），这里就得自己把磁贴放出来，否则要等 8 秒兜底。
+    if (!splash->alive()) {
+      if (FlutterWindow* w = FlutterWindow::instance()) w->RevealTiles();
+    }
+    result->Success();
+    return;
+  }
   if (call.method_name() == "panelResize") {
     const auto* edge = std::get_if<int32_t>(call.arguments());
     if (!edge) {
@@ -592,6 +633,16 @@ void FlutterWindow::Log(const std::string& message) {
       "log", std::make_unique<flutter::EncodableValue>(message));
 }
 
+void FlutterWindow::RevealTiles() {
+  HWND hwnd = GetHandle();
+  if (!hwnd) return;
+  KillTimer(hwnd, kRevealFallbackTimer);
+  if (IsWindowVisible(hwnd)) return;
+  // SW_SHOWNOACTIVATE 而不是 Show()：磁贴是桌面层的东西，冒出来的时候
+  // 不该把用户正在用的窗口挤到后面去，也不该抢焦点。
+  ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+}
+
 void FlutterWindow::OpenAiPanel() {
   // 侧边栏点齿轮时走这条。两个 Flutter 引擎不共享 isolate，Dart 之间没有
   // 直接通路，只能穿过 native 传话。
@@ -631,9 +682,15 @@ bool FlutterWindow::OnCreate() {
   // 磁贴窗口刻意不接受文件拖放：它常驻 Z 序最底，被任何窗口盖住就够不到，
   // 做了也只是时灵时不灵。投放点在 AI 侧边栏那个置顶窗口上（见 sidebar_window）。
 
-  flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
-  });
+  // 磁贴窗口不再在第一帧就显示，改成等 RevealTiles()（见头文件里的说明）。
+  //
+  // 兜底必须有：万一 Dart 挂了、或者插件卡住导致 splashFinish 永远不来，
+  // 窗口不能一直藏着 —— 那样整个程序看起来就是没启动。
+  //
+  // 定时器要在**窗口自己的线程**上装。之前挂在 SetNextFrameCallback 里，
+  // 那个回调跑在 Flutter 的光栅线程上，跨线程 SetTimer 之后主线程再
+  // KillTimer 是杀不掉的 —— 实测揭幕之后兜底照样触发了一次。
+  SetTimer(hwnd, kRevealFallbackTimer, kRevealFallbackMs, nullptr);
 
   // Flutter can complete the first frame before the "show window" callback is
   // registered. The following call ensures a frame is pending to ensure the
@@ -664,6 +721,19 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     KillTimer(hwnd, 0x5150);
     Log("触发跨引擎打开面板（--test-openpanel）");
     OpenAiPanel();
+    return 0;
+  }
+
+  // 揭幕兜底：Dart 一直没报"全部就绪"，也得把磁贴放出来
+  if (message == WM_TIMER && wparam == kRevealFallbackTimer) {
+    Log("等待卡片就绪超时，直接显示磁贴");
+    RevealTiles();
+    return 0;
+  }
+
+  // 幕布开始拉开，磁贴同时现身
+  if (message == kSplashRevealMessage) {
+    RevealTiles();
     return 0;
   }
 

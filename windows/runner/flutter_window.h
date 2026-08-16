@@ -29,6 +29,14 @@ class FlutterWindow : public Win32Window {
   // 让磁贴那个引擎打开控制面板并定位到 AI 页
   void OpenAiPanel();
 
+  // 揭幕：把磁贴窗口显示出来。
+  //
+  // 磁贴窗口原本在 Flutter 第一帧就显示，但那时插件才刚开始编译，卡片是空的，
+  // 用户会看着它们一张张往外蹦 —— 启动幕布盖的只是屏幕中间一小块，四周的
+  // 卡片全露在外面。所以改成等 Dart 报告全部就绪（splashFinish）再显示，
+  // 幕布落下时底下已经是完整的桌面。
+  void RevealTiles();
+
   // 把一行日志转给 Dart，由那边统一落进 userdata\logs\。
   //
   // C++ 这边的 printf 在发布版是丢的：GUI 子系统没有控制台，

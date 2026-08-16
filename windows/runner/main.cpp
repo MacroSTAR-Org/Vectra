@@ -6,6 +6,7 @@
 #include "flutter_window.h"
 #include "sidebar_window.h"
 #include "smtc.h"
+#include "splash_window.h"
 #include "utils.h"
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
@@ -24,6 +25,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // RegisterDragDrop 硬性要求 OLE 已初始化，只 CoInitializeEx 的话
   // 拖放注册会失败（返回 CO_E_NOTINITIALIZED）。
   ::OleInitialize(nullptr);
+
+  // 启动幕布要赶在引擎之前立起来。
+  //
+  // 下面 FlutterWindow::CreateOverlay 会去构造 FlutterViewController，那一步
+  // 阻塞几百毫秒；而磁贴窗口本身要等 Flutter 第一帧才显示。这中间屏幕上什么
+  // 都没有，用户只能干等。幕布跑在自己的线程上，这段时间照样能动。
+  SplashWindow::instance()->Start(instance);
 
   flutter::DartProject project(L"data");
 
@@ -58,6 +66,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);
+
+  // 幕布拉开时要让磁贴同时现身，把窗口句柄给它
+  SplashWindow::instance()->SetRevealTarget(window.GetHandle());
 
   // AI 侧边栏独立成窗口：磁贴常驻最底、侧边栏常驻最前，一个窗口做不到两件事。
   // 它跑第二个 Flutter 引擎（入口 sidebarMain），创建后先隐藏，等快捷键唤出。
