@@ -33,13 +33,26 @@ class CardView extends StatelessWidget {
   final Widget child;
 
   /// 底色是否偏亮。决定文字/描边用深色还是浅色，保证可读性：
-  ///   - 不透明卡：看卡底色自己（用户选的）
-  ///   - 云母卡：底色是固定深蓝灰，文字恒用浅色
+  ///   - 不透明卡：看卡底色自己（用户选的），它就是最终贴在屏幕上的颜色
+  ///   - 云母卡：按"色板 + 壁纸"的**实际合成结果**判断，见下面的注释
   ///   - 亚克力卡：染色越浓卡底色越主导，越淡壁纸越主导；auto 按混合后的
   ///     明暗走，用户显式选了浅色/深色主题则以主题为准（强制翻转）
   bool get _brightBackdrop {
-    if (settings.material == 'opaque' || settings.material == 'mica') {
+    if (settings.material == 'opaque') {
       return Color(settings.cardColor).computeLuminance() > 0.5;
+    }
+    if (settings.material == 'mica') {
+      // 云母必须看合成之后的颜色，不能直接看 cardColor —— 这正是
+      // "白底 + 云母 = 永远黑字看不清" 的根因：底色只决定色板的色相和明暗
+      // 档位，真正贴在屏幕上的是"色板 @ alpha 叠在壁纸上"的结果。
+      //
+      // 也不受 theme 影响：云母的明暗已经由用户选的底色定死了，再让主题
+      // 强制翻转就会又回到"卡片是深的、字却是黑的"那种自相矛盾的状态
+      // （用户实测切深浅色救不回来，就是因为这条分支压根没走到主题判断）。
+      final a = _micaAlpha;
+      final composite = _micaBase.computeLuminance() * a +
+          Wallpaper.brightness.value * (1 - a);
+      return composite > 0.5;
     }
     final tint = settings.glassTint.clamp(0.0, 1.0);
     final cardL = Color(settings.cardColor).computeLuminance();
@@ -49,6 +62,49 @@ class CardView extends StatelessWidget {
     if (eff == Brightness.dark) return false;
     return blended > 0.5;
   }
+
+  /// 云母色板的色相来源：用户选的卡片底色。
+  ///
+  /// 真 Windows 云母是"带壁纸色相的一层薄色板"，不是把壁纸糊掉。这里让用户
+  /// 的底色决定这层板子长什么样，但要做两件加工：
+  ///
+  ///   1. **明度压到两极**。中间调的半透明板子上深字浅字都读不清，所以浅色
+  ///      底走 0.78~0.94、深色底走 0.10~0.22。真 Windows 云母同样只有浅色/
+  ///      深色两个变体，没有中间态——这不是偷懒，是这材质本来的设计。
+  ///   2. **饱和度压到 0.3 以内**。云母是安静的材质，用户挑了个饱和大红时，
+  ///      不该真在墙上糊一块红板子，只取它的色相倾向。
+  ///
+  /// 底色本身没有饱和度时（纯白/纯灰/纯黑）补一点冷色：纯中性灰一上墙就显脏，
+  /// 偏冷的色相才是这材质高级感的来源。色相取 221°，正是改版前那个写死的
+  /// 0xFF1C2332 的色相，深色底的观感因此和以前保持一致。
+  Color get _micaBase {
+    final hsl = HSLColor.fromColor(Color(settings.cardColor));
+    final neutral = hsl.saturation < 0.02;
+    final hue = neutral ? 221.0 : hsl.hue;
+    final sat = neutral ? 0.08 : hsl.saturation.clamp(0.0, 0.30);
+    final l = hsl.lightness > 0.5
+        ? 0.78 + (hsl.lightness - 0.5) / 0.5 * 0.16
+        : 0.10 + hsl.lightness / 0.5 * 0.12;
+    return HSLColor.fromAHSL(1, hue, sat, l).toColor();
+  }
+
+  /// 云母色板的厚度。
+  ///
+  /// 深色板保持 0.45 —— 改版前就是这个值，老用户的观感一点不变。
+  /// 浅色板要厚到 0.70：同样的透明度下，深壁纸会把浅板子拖成灰扑扑的中间调，
+  /// 用户选了白色却得到一块灰板，等于这个设置又白设了一次。
+  ///
+  /// 这两档都是"保材质"的选择，不是"保对比度"的选择。云母本来就是半透明的，
+  /// 壁纸足够亮时深色板上的白字确实会发灰（实测纯白壁纸下约 2.2:1）。要让
+  /// 它在任何壁纸下都达到 4.5:1，深色板得厚到 0.85 以上——那时壁纸几乎透不
+  /// 上来，云母就退化成一张不透明深色卡，这个材质也就没有存在意义了。
+  /// 权衡之后选择保质感：真正致命的是"卡面明明是深的、字却按浅底规则画成黑色"
+  /// 那种自相矛盾（本次修的就是它），而不是半透明材质固有的对比度衰减。
+  ///
+  /// 厚度独立于 glassTint —— 那是给亚克力调的，搬过来会让云母要么闷死
+  /// 要么白蒙蒙。
+  double get _micaAlpha =>
+      HSLColor.fromColor(Color(settings.cardColor)).lightness > 0.5 ? 0.70 : 0.45;
 
   /// 边框与内高光的取色随底色明暗自动翻转：浅色卡片上白色高光是看不见的
   Color get _edge =>
@@ -66,12 +122,13 @@ class CardView extends StatelessWidget {
   Color get _fill {
     final c = Color(settings.cardColor);
     if (settings.material == 'opaque') return c;
-    // 云母：真 Windows 云母是"带壁纸色相的深色"，不是糊壁纸。用深蓝灰打底
-    // （偏冷的色相是高级感的来源，纯中性灰一上墙就显脏），alpha 压低让壁纸
-    // 的色调从下面透出来。厚度独立于 glassTint——那是给亚克力调的，
-    // 搬过来会让云母要么闷死要么白蒙蒙。
+    // 云母：一层由用户底色推导出来的薄色板，alpha 压低让壁纸的色调从下面
+    // 透出来（推导规则见 _micaBase / _micaAlpha）。
+    //
+    // 这里以前写死成 0xFF1C2332，导致"卡片底色"这个设置在云母下完全是个
+    // 摆设——用户调了没反应，配上白底还会触发黑字看不清。
     if (settings.material == 'mica') {
-      return const Color(0xFF1C2332).withValues(alpha: 0.45);
+      return _micaBase.withValues(alpha: _micaAlpha);
     }
     // 亚克力：只铺一层薄薄的染色，让模糊壁纸透上来
     return c.withValues(alpha: settings.glassTint.clamp(0.0, 1.0));
@@ -112,10 +169,15 @@ class CardView extends StatelessWidget {
                       fit: BoxFit.fill,
                       filterQuality: FilterQuality.low,
                     );
-                    // 云母不糊壁纸：壁纸压到半透明当色调底子，上面再盖深蓝灰。
+                    // 云母不糊壁纸：壁纸压到半透明当色调底子，上面再盖那层色板。
                     // 亚克力保持全透，那才是"透过玻璃看桌面"。
+                    //
+                    // 透出强度跟着色板厚度走：色板越厚，下面这层露出来的越少，
+                    // 留太多只是白白把浅色板拖灰。
                     return Opacity(
-                      opacity: settings.material == 'mica' ? 0.55 : 1.0,
+                      opacity: settings.material == 'mica'
+                          ? (1 - _micaAlpha).clamp(0.30, 0.55)
+                          : 1.0,
                       child: OverflowBox(
                         alignment: Alignment.topLeft,
                         maxWidth: double.infinity,
@@ -160,7 +222,11 @@ class CardView extends StatelessWidget {
                   ),
                   // 云母独有的顶部渐变：真 mica 表面就是上面微亮、往下沉。
                   // 一小条冷白渐变，让"深色板子"不显得死板。
-                  if (settings.material == 'mica')
+                  //
+                  // 只画在深色板上：浅色板本来就亮，再盖一层白只会把顶部糊平，
+                  // 那条"上亮下沉"的层次反而没了。浅色板的顶边交给
+                  // _topHighlight（它会翻成淡黑）去交代。
+                  if (settings.material == 'mica' && !_brightBackdrop)
                     Positioned.fill(
                       child: IgnorePointer(
                         child: DecoratedBox(
