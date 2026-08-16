@@ -737,6 +737,7 @@ class _ControlPanelState extends State<ControlPanel> {
       case 'number':
         final min = (f['min'] as num?)?.toDouble() ?? 0;
         final max = (f['max'] as num?)?.toDouble() ?? 100;
+        final step = (f['step'] as num?)?.toDouble() ?? 1;
         final v = ((current as num?)?.toDouble() ?? min).clamp(min, max);
         control = SizedBox(
           width: 220,
@@ -746,18 +747,16 @@ class _ControlPanelState extends State<ControlPanel> {
                 value: v,
                 min: min,
                 max: max,
-                divisions: ((max - min) / ((f['step'] as num?)?.toDouble() ?? 1))
-                    .round()
-                    .clamp(1, 1000),
+                divisions: ((max - min) / step).round().clamp(1, 1000),
                 onChanged: (nv) {
-                  card.settings[key] = nv.round();
+                  card.settings[key] = snapNumber(nv, min, step);
                   _commit();
                 },
               ),
             ),
             SizedBox(
                 width: 34,
-                child: Text('${v.round()}',
+                child: Text(formatNumber(v, step),
                     style: TextStyle(fontSize: 11, color: _c.ink60))),
           ]),
         );
@@ -1471,6 +1470,24 @@ class _ControlPanelState extends State<ControlPanel> {
             style: TextStyle(fontSize: 11, color: _c.ink38, height: 1.5),
           ),
         ]),
+        _group(title: '日志', icon: Icons.description_outlined, children: [
+          Text(
+            '运行日志按天分文件，保留最近 7 天。\n'
+            '反馈问题时把最近那几个 .log 一并发来，能省掉大量来回确认。',
+            style: TextStyle(fontSize: 11, color: _c.ink38, height: 1.5),
+          ),
+          const SizedBox(height: 10),
+          _pathLine(AppPaths.logsDir),
+          const SizedBox(height: 10),
+          Button(
+            onPressed: () => NativeBridge.openLogDir(AppPaths.logsDir),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.folder_open_outlined, size: 14, color: _c.ink70),
+              const SizedBox(width: 6),
+              Text('打开日志目录', style: TextStyle(fontSize: 12)),
+            ]),
+          ),
+        ]),
         _group(title: '布局备份', icon: Icons.backup_outlined, children: [
           Text(
             '备份包含卡片布局、外观设置和 AI 配置，不含插件缓存，只有几 KB。\n'
@@ -1677,28 +1694,6 @@ class _ControlPanelState extends State<ControlPanel> {
         _group(title: '信息', icon: Icons.info_outline, children: [
           _aboutRow('作者', 'MacroSTAR Studio © 2026'),
           _aboutRow('数据', widget.store.dir, monospace: true),
-          _aboutRow('日志', AppPaths.logsDir, monospace: true),
-          // 报问题时最费劲的一步是"日志在哪"。给个按钮直接开到目录，
-          // 用户把那几个 .log 拖出来就行。
-          //
-          // 按钮和说明分两行：面板可以被拖得很窄，挤在一行里说明文字会把
-          // Row 撑破（实测 404px 宽就溢出）。窄到一定程度谁都放不下，
-          // 与其压缩不如换行。
-          Padding(
-            padding: const EdgeInsets.only(top: 2, left: 52),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Button(
-                  onPressed: () => NativeBridge.openLogDir(AppPaths.logsDir),
-                  child: const Text('打开日志目录'),
-                ),
-                const SizedBox(height: 6),
-                Text('按天分文件，保留最近 7 天',
-                    style: TextStyle(fontSize: 11, color: _c.ink38)),
-              ],
-            ),
-          ),
         ]),
         _group(title: '项目', icon: Icons.link_outlined, children: [
           Padding(
@@ -1717,6 +1712,28 @@ class _ControlPanelState extends State<ControlPanel> {
           ),
         ]),
       ],
+    );
+  }
+
+  /// 一行只读路径。面板可以被拖得很窄，所以必须能换行——
+  /// 路径动辄上百字符，塞进不换行的 Text 会直接把布局撑破。
+  Widget _pathLine(String path) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: _c.cardBorder.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        path,
+        style: TextStyle(
+          fontSize: 11,
+          color: _c.ink70,
+          height: 1.4,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
     );
   }
 
@@ -1945,4 +1962,41 @@ class _WinButtonState extends State<_WinButton> {
       ),
     );
   }
+}
+
+// ---------------- 插件 number 设置项的取值 ----------------
+
+/// 把滑块值对齐到插件声明的 step 上。
+///
+/// 这里过去写的是 `nv.round()`，等于不管 step 是多少都取整到个位——
+/// 插件声明 step:0.1 时用户根本存不进小数：拖到 0.3 存成 0、拖到 0.6 存成 1。
+/// 内置那几个设置项（网格像素、历史条数）本来就是整数，所以一直没暴露出来，
+/// 但插件清单里的 number 字段是允许带小数的。
+///
+/// 对齐到 step 而不是直接存原值：滑块给的是连续值，不归一下会存进
+/// 0.30000000000000004 这种浮点噪声，写进 config.json 难看，插件那边拿它
+/// 比较相等也会出意外。step 为整数时结果转回 int，免得整数项被写成 "5.0"。
+@visibleForTesting
+num snapNumber(double raw, double min, double step) {
+  if (step <= 0) return raw;
+  final snapped = min + ((raw - min) / step).round() * step;
+  // 浮点累加会漂，按 step 的小数位数收尾
+  final decimals = decimalsOf(step);
+  final fixed = double.parse(snapped.toStringAsFixed(decimals));
+  return decimals == 0 ? fixed.toInt() : fixed;
+}
+
+/// step 有几位小数——取整和显示都按它来
+@visibleForTesting
+int decimalsOf(double step) {
+  if (step == step.roundToDouble()) return 0;
+  final s = step.toString();
+  final dot = s.indexOf('.');
+  return dot < 0 ? 0 : (s.length - dot - 1).clamp(0, 4);
+}
+
+@visibleForTesting
+String formatNumber(double v, double step) {
+  final d = decimalsOf(step);
+  return d == 0 ? '${v.round()}' : v.toStringAsFixed(d);
 }

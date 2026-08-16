@@ -106,7 +106,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   });
 
-  testWidgets('关于页给出日志目录和打开按钮（报问题时第一步就是找日志）',
+  testWidgets('「其他」页给出日志目录和打开按钮（报问题时第一步就是找日志）',
       (tester) async {
     // 按钮点下去会调 native 的 openLogDir，这里记下有没有真的发出去
     final calls = <MethodCall>[];
@@ -126,7 +126,7 @@ void main() {
         store: store,
         registry:
             PluginRegistry(Directory.systemTemp.createTempSync('lw-reg').path),
-        initialTab: 5, // 关于页
+        initialTab: 4, // 「其他」页：日志和启动、备份一样属于运维项
         onClose: () {},
         onChanged: () {},
         onAdd: (_) {},
@@ -135,7 +135,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('日志'), findsOneWidget, reason: '关于页要显示日志目录在哪');
+    expect(find.text('日志'), findsOneWidget, reason: '「其他」页要有日志分组');
 
     final btn = find.widgetWithText(Button, '打开日志目录');
     expect(btn, findsOneWidget);
@@ -147,5 +147,87 @@ void main() {
         reason: '按钮要真的让 native 打开目录，不能只是个摆设');
 
     await tester.pump(const Duration(milliseconds: 400));
+  });
+
+  testWidgets('「其他」页在最窄面板下不撑破布局', (tester) async {
+    // 「关于」页当年在这里栽过：按钮和说明挤在一行，窄了就溢出。
+    // 日志这组搬过来时按钮独占一行、路径用可换行的框，这条守住不再犯。
+    //
+    // 宽度取 720 —— panel_window.cpp 里 kMinWidth 就是这个值，
+    // WM_GETMINMAXINFO 拦着，用户再怎么拖也窄不过它。按更小的尺寸测等于
+    // 给一个不存在的场景加约束，只会逼出没必要的布局妥协。
+    tester.view.physicalSize = const Size(720, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+            const MethodChannel('vectra/native'), (call) async => null);
+
+    final state = AppState(settings: AppSettings(), cards: []);
+    final store = Store(Directory.systemTemp.createTempSync('lw-panel4').path);
+
+    await tester.pumpWidget(FluentApp(
+      home: ControlPanel(
+        state: state,
+        store: store,
+        registry:
+            PluginRegistry(Directory.systemTemp.createTempSync('lw-reg').path),
+        initialTab: 4,
+        onClose: () {},
+        onChanged: () {},
+        onAdd: (_) {},
+        onRemove: (_) {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull,
+        reason: '窄面板下「其他」页不能有 RenderFlex 溢出');
+
+    await tester.pump(const Duration(milliseconds: 400));
+  });
+
+  // ---------------- 插件 number 设置项的精度 ----------------
+  //
+  // 插件清单里的 number 字段允许带小数（step: 0.1 之类），
+  // 而滑块回调过去一律 .round()，把小数全抹平了。
+  group('number 设置项按 step 取值', () {
+    test('step 是小数时，小数必须存得住', () {
+      // 这是修复前彻底坏掉的场景：0~1 之间、步长 0.1
+      expect(snapNumber(0.3, 0, 0.1), 0.3, reason: '修复前 .round() 会存成 0');
+      expect(snapNumber(0.5, 0, 0.1), 0.5, reason: '修复前会存成 1');
+      expect(snapNumber(0.6, 0, 0.1), 0.6, reason: '修复前会进位成 1');
+      expect(snapNumber(0.85, 0, 0.05), 0.85);
+    });
+
+    test('对齐到 step，不留浮点噪声', () {
+      // 直接存滑块原值会写进 0.30000000000000004 这种东西
+      final v = snapNumber(0.30000000000000004, 0, 0.1);
+      expect(v, 0.3);
+      expect(v.toString(), '0.3', reason: 'config.json 里不该出现浮点噪声');
+    });
+
+    test('step 是整数时结果仍是 int，不写成 5.0', () {
+      final v = snapNumber(5.4, 0, 1);
+      expect(v, 5);
+      expect(v, isA<int>(), reason: '整数设置项被写成 5.0 会让插件的相等比较出意外');
+    });
+
+    test('min 不是 0 时按 min 起算', () {
+      expect(snapNumber(1.25, 1, 0.5), 1.5);
+      expect(snapNumber(1.1, 1, 0.5), 1.0);
+    });
+
+    test('显示位数跟着 step 走', () {
+      expect(formatNumber(0.3, 0.1), '0.3');
+      expect(formatNumber(5.0, 1), '5', reason: '整数步长不该显示成 5.0');
+      expect(formatNumber(0.85, 0.05), '0.85');
+    });
+
+    test('step 非法时不炸，原样返回', () {
+      expect(snapNumber(0.7, 0, 0), 0.7);
+      expect(snapNumber(0.7, 0, -1), 0.7);
+    });
   });
 }

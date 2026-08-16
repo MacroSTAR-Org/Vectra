@@ -198,11 +198,16 @@ std::vector<uint8_t> CaptureDesktop(int width, int height) {
       // 这里算亮度的均值与方差，内容近乎纯色就判定抓屏失败：返回空交给
       // Dart 回退读壁纸文件（静态壁纸那条路确定可靠）。误判也无害——真·纯色
       // 壁纸从文件读回来也是同一块颜色。
+      // 32 位 BI_RGB 的 DIB 在内存里是 BGRA，不是 RGBA（Dart 那边也正是按
+      // PixelFormat.bgra8888 解码这块缓冲的）。所以 out[i] 是蓝、out[i+2] 是红，
+      // Rec.709 的红蓝权重要跟着换过来，否则红/蓝为主的壁纸亮度会算歪：
+      // 深红壁纸的真实亮度约 0.2126*R，按错的算只剩 0.0722*R，容易掉到
+      // mean < 8 的门槛以下，把一帧本来抓得好好的桌面误判成"纯色帧"丢掉。
       const double n = static_cast<double>(width) * height;
       double sum = 0.0, sumsq = 0.0;
       for (size_t i = 0; i < out.size(); i += 4) {
-        const double y = 0.2126 * out[i] + 0.7152 * out[i + 1] +
-                         0.0722 * out[i + 2];
+        const double y = 0.0722 * out[i] + 0.7152 * out[i + 1] +
+                         0.2126 * out[i + 2];
         sum += y;
         sumsq += y * y;
       }
