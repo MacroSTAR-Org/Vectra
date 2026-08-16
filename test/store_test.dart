@@ -39,6 +39,42 @@ void main() {
       expect(text.contains('"chat"'), isFalse, reason: 'chat 字段已废弃');
     });
 
+    test('卡片记的"家在哪块屏"要能存下来、读回来', () async {
+      // 这份锚点是多显示器不错位的全部依据：只要它没被存进去，
+      // 下次启动就只剩窗口坐标，接一块屏原点一变，卡片就集体偏了。
+      final dir = makeTempDir();
+      addTearDown(() => dir.deleteSync(recursive: true));
+
+      final store = Store(dir.path);
+      final state = await store.load();
+      final card = WidgetCard(
+          id: 'clock-1', pluginId: 'clock', x: 10, y: 20, size: '2x2', z: 1);
+      card.anchorTo(monitorId: r'\\.\DISPLAY2', relX: 0.25, relY: 0.75);
+      state.cards.add(card);
+      await store.saveNow(state);
+
+      final back = (await Store(dir.path).load()).cards.single;
+      expect(back.monitorId, r'\\.\DISPLAY2');
+      expect(back.relX, 0.25);
+      expect(back.relY, 0.75);
+    });
+
+    test('老配置里的卡片没有家，读出来是 null 而不是报错', () async {
+      // 认家是后加的，已经在用的配置里没有这三个键
+      final dir = makeTempDir();
+      addTearDown(() => dir.deleteSync(recursive: true));
+      File(p.join(dir.path, 'config.json')).writeAsStringSync(jsonEncode({
+        'settings': <String, Object?>{},
+        'cards': [
+          {'id': 'clock-1', 'pluginId': 'clock', 'x': 10, 'y': 20, 'z': 1}
+        ],
+      }));
+
+      final card = (await Store(dir.path).load()).cards.single;
+      expect(card.monitorId, isNull);
+      expect(card.x, 10);
+    });
+
     test('插件写数据不会重写 config.json', () async {
       final dir = makeTempDir();
       addTearDown(() => dir.deleteSync(recursive: true));

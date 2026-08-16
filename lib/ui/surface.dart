@@ -44,6 +44,7 @@ class DesktopSurface extends StatefulWidget {
     required this.store,
     required this.buildPluginBody,
     this.onCardSecondaryTap,
+    this.onCardAnchor,
   });
 
   final AppState state;
@@ -54,6 +55,13 @@ class DesktopSurface extends StatefulWidget {
 
   /// 右键卡片：打开控制面板并定位到这张卡片
   final void Function(WidgetCard card)? onCardSecondaryTap;
+
+  /// 卡片落位之后记一次"它现在在哪块屏的哪个位置"。
+  ///
+  /// 由外层实现：显示器矩形和窗口矩形都在 app_root 那边缓存着，
+  /// 这里再问一遍 native 只是重复。落点不记的话，下次接屏/拔屏时这张卡
+  /// 会按**上一个**落点被钉回去。
+  final void Function(WidgetCard card)? onCardAnchor;
 
   // 这里原先有个 extraHit：当年 AI 侧边栏和磁贴共用一个窗口时，
   // 用它把侧边栏矩形并进窗口区域。侧边栏拆成独立窗口之后就没人再传了，
@@ -353,6 +361,11 @@ class DesktopSurfaceState extends State<DesktopSurface> {
     setState(() => _guides = const []);
     // 先关拖拽模式，再推区域，否则 native 会因为仍在拖拽而跳过这次裁剪
     NativeBridge.setDragging(false).then((_) => _pushRegion());
+    if (moved && card != null) {
+      // 先认家再存盘：存下去的必须是"落点 + 落点所在的屏"这一对，
+      // 只存坐标的话，下次布局一变就没法把它放回用户放的地方
+      widget.onCardAnchor?.call(card);
+    }
     if (moved) widget.store.save(widget.state);
     // 只记落点，不记过程：拖动中每帧都记的话，一次拖拽就能刷几百行，
     // 真正有用的信息反而被冲掉了。

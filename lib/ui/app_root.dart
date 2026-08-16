@@ -12,6 +12,7 @@ import 'package:tray_manager/tray_manager.dart';
 
 import '../core/grid.dart';
 import '../core/logger.dart';
+import '../core/monitor.dart';
 import '../core/snap.dart' as snap;
 import '../core/theme.dart';
 import '../model/ai_settings.dart';
@@ -58,7 +59,7 @@ class AppRootState extends State<AppRoot> with TrayListener {
 
   /// 最近一次见过的显示器集合。显示器插拔时和新的比对，
   /// 用来判断"某张卡原来在的那块屏被拔了没有"。
-  List<({String id, int x, int y, int w, int h})> _lastMonitors = const [];
+  List<MonitorRect> _lastMonitors = const [];
 
   /// 磁贴窗口在虚拟屏里的位置。显示器矩形是虚拟屏坐标、卡片是窗口内坐标，
   /// 两者换算就靠它。和 _lastMonitors 同时更新。
@@ -124,16 +125,50 @@ class AppRootState extends State<AppRoot> with TrayListener {
 
   // ---------------- 多显示器适配 ----------------
 
-  /// 启动时记录一次显示器集合。卡片坐标是绝对的，屏在就在、拔了就被
-  /// 下面的 _syncCardsWithDisplays 迁移；这里只需要记住"当前有哪些屏"。
+  /// 启动时先认一遍屏，再立刻对一次账。
+  ///
+  /// 光记不对账是不够的：卡片存的是窗口坐标，而窗口原点就是虚拟屏原点，
+  /// 关掉程序、在主屏左边接一块屏、再打开——原点从 0 变成了 -1920，所有卡片
+  /// 于是整体偏到左边那块屏上去。这种"上次退出到这次启动之间布局变了"的情况
+  /// 收不到任何 WM_DISPLAYCHANGE，只能启动时自己对一次。
   Future<void> _initMonitors() async {
     try {
       final monitors = await NativeBridge.getMonitors();
       final winRect = await NativeBridge.getWindowRect();
       if (monitors.isNotEmpty) _lastMonitors = monitors;
       _lastWindowRect = winRect;
+      Log.i('app',
+          '显示器 ${monitors.length} 块'
+          '${monitors.map((m) => " ${m.id} ${m.w}x${m.h}@${m.x},${m.y}").join()}');
     } catch (e) {
       Log.w('app', '显示器初始化失败: $e');
+    }
+    await _syncCardsWithDisplays();
+  }
+
+  /// 记下这张卡现在在哪块屏的哪个位置。
+  ///
+  /// 放好位置的每条路径都要调一次（加卡、拖拽落点、改尺寸），否则下次布局一变，
+  /// 卡片会按**旧**的家被钉回去，看起来就是"自己跑了"。
+  void anchorCard(WidgetCard c) {
+    final wr = _lastWindowRect;
+    if (!mounted || _lastMonitors.isEmpty || wr == null) return;
+    final s = widget.state.settings;
+    final size = c.pxSize(s.gridCell, s.gridGap);
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final home = homeOf(
+      _lastMonitors,
+      physicalCenter(wr.x.toDouble(), c.x, size.w, dpr),
+      physicalCenter(wr.y.toDouble(), c.y, size.h, dpr),
+    );
+    if (home == null) return;
+    c.anchorTo(monitorId: home.id, relX: home.relX, relY: home.relY);
+  }
+
+  /// 面板里改过东西（尺寸、网格）之后，把所有卡片的家刷新一遍。
+  void _anchorAll() {
+    for (final c in widget.state.cards) {
+      anchorCard(c);
     }
   }
 
@@ -146,10 +181,17 @@ class AppRootState extends State<AppRoot> with TrayListener {
     WidgetsBinding.instance.scheduleFrame();
   }
 
-  /// 卡片迁移：
-  ///   1. 某张卡原来所在的那块屏被拔了 → 迁到离它最近的屏，保持相对位置
-  ///   2. 无论如何都夹回新的可见区，保证卡不丢
-  /// 屏幕没被拔的卡不动（位置不变，天然"记住"自己那块屏）。
+  /// 把卡片和当前的显示器布局对一次账。启动时和显示器插拔时都走这里。
+  ///
+  /// 三种情况，按顺序判：
+  ///   1. 卡片记得自己的家，那块屏还在 → 按屏内相对位置钉回去。
+  ///      **这条是多显示器错位的正解**：窗口原点（虚拟屏原点）会因为接上/拔掉
+  ///      左边或上面的屏而移动，缩放比例变了也会让同一个逻辑坐标落到别处；
+  ///      而屏本身的矩形不会因此改变，所以锚在屏上算出来的位置才是稳的。
+  ///      位置和家对得上就什么都不做——不然浮点误差会让每次启动都存一次盘。
+  ///   2. 家没了（那块屏被拔了）→ 迁到最近的屏，保持相对位置，再认新家。
+  ///   3. 压根没记过家（老配置）→ 按当前位置认领一块屏，位置不动。
+  /// 最后无论如何都夹回可视区，保证卡片不会丢在屏幕外。
   Future<void> _syncCardsWithDisplays() async {
     try {
       final monitors = await NativeBridge.getMonitors();
@@ -159,76 +201,108 @@ class AppRootState extends State<AppRoot> with TrayListener {
       final vx = winRect.x.toDouble(), vy = winRect.y.toDouble();
       final bounds = MediaQuery.of(context).size;
 
-      var changed = false;
+      var moved = 0, claimed = 0;
       for (final c in widget.state.cards) {
         final size = c.pxSize(widget.state.settings.gridCell,
             widget.state.settings.gridGap);
-        final physCX = vx + (c.x + size.w / 2) * dpr;
-        final physCY = vy + (c.y + size.h / 2) * dpr;
+        final home = monitorById(monitors, c.monitorId);
 
-        final oldHome = _monitorAt(_lastMonitors, physCX, physCY);
-        if (oldHome != null) {
-          final stillThere = monitors.any((m) => m.id == oldHome.id);
-          if (!stillThere) {
-            final target =
-                _nearestMonitor(monitors, oldHome.x + oldHome.w / 2.0,
-                    oldHome.y + oldHome.h / 2.0);
+        if (home != null) {
+          // 情况 1：家还在，按相对位置算出该在哪，对不上就钉回去
+          final wantX = anchoredTopLeft(
+            monitorOrigin: home.x.toDouble(),
+            monitorSize: home.w.toDouble(),
+            rel: c.relX ?? 0.5,
+            windowOrigin: vx,
+            dpr: dpr,
+            cardSize: size.w,
+          );
+          final wantY = anchoredTopLeft(
+            monitorOrigin: home.y.toDouble(),
+            monitorSize: home.h.toDouble(),
+            rel: c.relY ?? 0.5,
+            windowOrigin: vy,
+            dpr: dpr,
+            cardSize: size.h,
+          );
+          if ((wantX - c.x).abs() > kAnchorEpsilon ||
+              (wantY - c.y).abs() > kAnchorEpsilon) {
+            c.x = wantX;
+            c.y = wantY;
+            moved++;
+          }
+        } else {
+          // 情况 2：家被拔了 —— 迁到最近那块屏，保持它在原屏里的相对位置
+          final physCX = physicalCenter(vx, c.x, size.w, dpr);
+          final physCY = physicalCenter(vy, c.y, size.h, dpr);
+          final oldHome = monitorAt(_lastMonitors, physCX, physCY);
+          if (oldHome != null &&
+              !monitors.any((m) => m.id == oldHome.id)) {
+            final target = nearestMonitor(monitors,
+                oldHome.x + oldHome.w / 2.0, oldHome.y + oldHome.h / 2.0);
             if (target != null) {
-              final relX = (physCX - oldHome.x) / oldHome.w;
-              final relY = (physCY - oldHome.y) / oldHome.h;
-              c.x = (target.x + relX * target.w - vx) / dpr - size.w / 2;
-              c.y = (target.y + relY * target.h - vy) / dpr - size.h / 2;
-              changed = true;
+              c.x = anchoredTopLeft(
+                monitorOrigin: target.x.toDouble(),
+                monitorSize: target.w.toDouble(),
+                rel: (physCX - oldHome.x) / oldHome.w,
+                windowOrigin: vx,
+                dpr: dpr,
+                cardSize: size.w,
+              );
+              c.y = anchoredTopLeft(
+                monitorOrigin: target.y.toDouble(),
+                monitorSize: target.h.toDouble(),
+                rel: (physCY - oldHome.y) / oldHome.h,
+                windowOrigin: vy,
+                dpr: dpr,
+                cardSize: size.h,
+              );
+              moved++;
             }
           }
         }
 
+        // 夹回可视区：换分辨率、屏变少、网格变大都可能把卡片挤出去，
+        // 而完全看不见的卡片也就点不到、拖不回来。
         final nx = snap.clamp(c.x, 0, math.max(0.0, bounds.width - size.w));
         final ny = snap.clamp(c.y, 0, math.max(0.0, bounds.height - size.h));
         if (nx != c.x || ny != c.y) {
           c.x = nx;
           c.y = ny;
-          changed = true;
+          moved++;
+        }
+
+        // 情况 3（以及迁移之后）：认一块新家。位置本身不动。
+        if (monitorById(monitors, c.monitorId) == null) {
+          final h = homeOf(
+            monitors,
+            physicalCenter(vx, c.x, size.w, dpr),
+            physicalCenter(vy, c.y, size.h, dpr),
+          );
+          if (h != null) {
+            c.anchorTo(monitorId: h.id, relX: h.relX, relY: h.relY);
+            claimed++;
+          }
         }
       }
 
       _lastMonitors = monitors;
       _lastWindowRect = winRect;
-      if (changed) {
+      if (moved > 0 || claimed > 0) {
         widget.store.save(widget.state);
         if (mounted) setState(() => _revision++);
         _surfaceKey.currentState?.pushRegion();
-        Log.i('app', '显示器变化，卡片已重摆');
+        Log.i(
+            'app',
+            '按显示器布局对账：'
+            '${moved > 0 ? "重摆 $moved 张" : ""}'
+            '${moved > 0 && claimed > 0 ? "，" : ""}'
+            '${claimed > 0 ? "认领 $claimed 张" : ""}');
       }
       _loadWallpaper();
     } catch (e) {
       Log.w('app', '显示器适配失败: $e');
     }
-  }
-
-  ({String id, int x, int y, int w, int h})? _monitorAt(
-      List<({String id, int x, int y, int w, int h})> mons, double x, double y) {
-    for (final m in mons) {
-      if (x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h) return m;
-    }
-    return null;
-  }
-
-  ({String id, int x, int y, int w, int h})? _nearestMonitor(
-      List<({String id, int x, int y, int w, int h})> mons,
-      double cx,
-      double cy) {
-    ({String id, int x, int y, int w, int h})? best;
-    var bestD = double.infinity;
-    for (final m in mons) {
-      final mcx = m.x + m.w / 2.0, mcy = m.y + m.h / 2.0;
-      final d = (mcx - cx) * (mcx - cx) + (mcy - cy) * (mcy - cy);
-      if (d < bestD) {
-        bestD = d;
-        best = m;
-      }
-    }
-    return best;
   }
 
 
@@ -342,6 +416,8 @@ class AppRootState extends State<AppRoot> with TrayListener {
   /// 面板里改了设置。和过去那个内嵌面板的 onChanged 是同一件事。
   void onPanelChanged() {
     _loadWallpaper();
+    // 面板能改卡片尺寸和网格大小，两者都会挪动卡片中心，家要跟着刷新
+    _anchorAll();
     // AI 那页的改动写在 state.json 里，侧边栏是另一个引擎，
     // 得喊一声它才会重新读——否则要等到下次唤出才生效。
     NativeBridge.reloadSidebar();
@@ -422,6 +498,8 @@ class AppRootState extends State<AppRoot> with TrayListener {
       settings: plugin.defaultSettings(),
     );
     widget.state.cards.add(card);
+    // 新卡片当场认家，否则下次布局一变它就没有依据、只能被夹回可视区
+    anchorCard(card);
     Log.i('app',
         '添加组件 ${plugin.id} 于 ${card.x.round()},${card.y.round()} '
         '(${card.size})，现有 ${widget.state.cards.length} 张');
@@ -446,6 +524,7 @@ class AppRootState extends State<AppRoot> with TrayListener {
           state: widget.state,
           store: widget.store,
           onCardSecondaryTap: (card) => openPanel(cardId: card.id),
+          onCardAnchor: anchorCard,
           buildPluginBody: (card, size) => PluginCardBody(
             key: ValueKey('${card.id}:${card.size}:$_revision'),
             card: card,
@@ -455,6 +534,9 @@ class AppRootState extends State<AppRoot> with TrayListener {
             state: widget.state,
             onRequestSize: (s) {
               card.size = s;
+              // 尺寸变了中心也就变了，家要跟着刷新：不然下次布局变化时
+              // 会按旧中心把卡片钉回去，看起来像自己挪了半个身位
+              anchorCard(card);
               widget.store.save(widget.state);
               setState(() => _revision++);
             },

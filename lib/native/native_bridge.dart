@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import '../core/hit.dart';
 import '../core/logger.dart';
+import '../core/monitor.dart';
 import '../core/snap.dart' as snap;
 
 class NativeBridge {
@@ -129,8 +130,7 @@ class NativeBridge {
       _channel.invokeMethod<void>('openLogDir', dir);
 
   /// 当前所有显示器的物理矩形 + 设备名。多显示器适配用。
-  static Future<List<({String id, int x, int y, int w, int h})>>
-      getMonitors() async {
+  static Future<List<MonitorRect>> getMonitors() async {
     final list =
         await _channel.invokeListMethod<Map<dynamic, dynamic>>('getMonitors');
     return [

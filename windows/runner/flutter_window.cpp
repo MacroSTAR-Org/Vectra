@@ -643,6 +643,21 @@ void FlutterWindow::RevealTiles() {
   ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 }
 
+void FlutterWindow::CoverVirtualScreen(HWND hwnd, const char* reason) {
+  // 覆盖整个虚拟屏幕，而不是主显示器：多显示器下卡片可以放到任意一块屏上。
+  // SM_XVIRTUALSCREEN / SM_YVIRTUALSCREEN 可能为负（副屏在主屏左侧或上方），
+  // 这也正是卡片不能只靠窗口坐标定位的原因——原点会动，见 core/monitor.dart。
+  const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+  const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+  const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+  const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+  char buf[160];
+  std::snprintf(buf, sizeof(buf), "%s 重铺虚拟屏=%d,%d %dx%d dpi=%u", reason,
+                vx, vy, vw, vh, GetDpiForWindow(hwnd));
+  Log(buf);
+  SetWindowPos(hwnd, HWND_BOTTOM, vx, vy, vw, vh, SWP_NOACTIVATE);
+}
+
 void FlutterWindow::OpenAiPanel() {
   // 侧边栏点齿轮时走这条。两个 Flutter 引擎不共享 isolate，Dart 之间没有
   // 直接通路，只能穿过 native 传话。
@@ -747,22 +762,32 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   // 显示器插拔：磁贴窗口重新覆盖新的虚拟屏，再通知 Dart 迁移卡片、刷新壁纸。
   // 放在交给 Flutter 之前，避免被 HandleTopLevelWindowProc 消费掉。
   if (message == WM_DISPLAYCHANGE) {
-    const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-    const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-    const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-    {
-      char buf[128];
-      std::snprintf(buf, sizeof(buf),
-                    "WM_DISPLAYCHANGE 新虚拟屏=%d,%d %dx%d", vx, vy, vw, vh);
-      Log(buf);
-    }
-    SetWindowPos(hwnd, HWND_BOTTOM, vx, vy, vw, vh, SWP_NOACTIVATE);
+    CoverVirtualScreen(hwnd, "WM_DISPLAYCHANGE");
     if (method_channel_) {
       method_channel_->InvokeMethod(
           "displayChanged", std::make_unique<flutter::EncodableValue>(true));
     }
     // 侧边栏贴屏幕右侧，屏变了要重摆
+    if (SidebarWindow* sb = SidebarWindow::instance()) sb->OnDisplayChange();
+    return 0;
+  }
+
+  // 缩放比例变化（改了显示设置里的"缩放"，或窗口的主显示器换成了另一档缩放的屏）。
+  //
+  // 这条**必须**自己接管，不能落到 Win32Window 的默认处理上：那边照普通窗口的
+  // 规矩办，把窗口改成系统给的"建议矩形"——建议矩形的用意是保持窗口的逻辑尺寸
+  // 不变，可磁贴窗口的本分是盖住整个虚拟屏，一照做就缩成一块屏那么大，另一块屏
+  // 上的卡片连带整个区域一起消失（既画不出来也点不到）。
+  //
+  // 重新铺满之后会走 WM_SIZE，Flutter 那边按新的 GetDpiForWindow 重新上报
+  // 度量，Dart 侧的 devicePixelRatio 跟着更新；再喊一声 displayChanged，
+  // 让卡片按"屏内相对位置"重新钉一遍——缩放一变，同一个逻辑坐标就落到别处了。
+  if (message == WM_DPICHANGED) {
+    CoverVirtualScreen(hwnd, "WM_DPICHANGED");
+    if (method_channel_) {
+      method_channel_->InvokeMethod(
+          "displayChanged", std::make_unique<flutter::EncodableValue>(true));
+    }
     if (SidebarWindow* sb = SidebarWindow::instance()) sb->OnDisplayChange();
     return 0;
   }

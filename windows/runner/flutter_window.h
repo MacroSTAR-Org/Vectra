@@ -52,6 +52,10 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  // 把窗口重新铺满整个虚拟屏。磁贴窗口的不变式，显示器插拔和缩放变化后都要做
+  // 一次；[reason] 只是写进日志，用来分辨是哪条消息触发的。
+  void CoverVirtualScreen(HWND hwnd, const char* reason);
+
   // The project to run.
   flutter::DartProject project_;
 
