@@ -136,6 +136,53 @@ class DesktopSurfaceState extends State<DesktopSurface> {
   /// 把卡片矩形推给 native。对外公开，供外层在需要时确定性地重推一次。
   void pushRegion() => _pushRegion();
 
+  /// 上一次推给 native 的几何签名，用来判断"这一帧卡片的形状到底变没变"。
+  String? _lastRegionSig;
+
+  /// 会影响窗口区域的所有量：每张卡片的位置和尺寸，加上圆角与缩放。
+  /// 这些里面任何一个变了，native 那边的裁剪就过期了。
+  String _regionSig() {
+    final b = StringBuffer()
+      ..write(_settings.cardRadius)
+      ..write('@')
+      ..write(_dpr);
+    for (final c in _cards) {
+      final s = _px(c);
+      b
+        ..write('|')
+        ..write(c.id)
+        ..write(',')
+        ..write(c.x)
+        ..write(',')
+        ..write(c.y)
+        ..write(',')
+        ..write(s.w)
+        ..write(',')
+        ..write(s.h);
+    }
+    return b.toString();
+  }
+
+  /// 每帧落定后自检一次：卡片几何变了就把新区域推给 native。
+  ///
+  /// 做成"自动对账"而不是让每个调用方各自记得推，是因为漏推的代价既隐蔽又严重：
+  /// 窗口被 SetWindowRgn 硬裁成卡片矩形的并集，区域之外既不绘制也不接收输入。
+  /// 区域一旦过期，新加的卡片画了也会被裁掉——看不见，也点不到；而桌面上一张
+  /// 卡片都没有的时候，连"拖一下别的卡片顺带把区域刷新掉"这条退路都没有，
+  /// 只能重启。
+  ///
+  /// 这不是假想的风险：加卡、删卡、插件请求改尺寸、面板里改网格/圆角，
+  /// 四条路径全都漏推过（见本次提交）。与其在每条路径末尾各加一行、
+  /// 且指望以后每个新路径都记得加，不如让 surface 自己盯着几何对账。
+  void _syncRegion() {
+    if (!mounted) return;
+    // 拖拽期间 native 那边是整窗放开的（见 _onPointerMove 与 _endDrag 的注释），
+    // 这时推区域等于把卡片重新裁回去，会拖到一半"卡"住。松手时 _endDrag 补推。
+    if (_dragCard != null) return;
+    if (_regionSig() == _lastRegionSig) return;
+    _pushRegion();
+  }
+
   void _pushRegion() {
     final cards = <HitRect>[
       for (final c in _cards)
@@ -148,6 +195,8 @@ class DesktopSurfaceState extends State<DesktopSurface> {
           z: c.z.toDouble(),
         ),
     ];
+    // 显式推送也要记账，否则自动对账会以为区域还是旧的，白推一次
+    _lastRegionSig = _regionSig();
     NativeBridge.setRegion(
       cards: cards,
       // 辅助线只在拖拽时出现，而拖拽期间区域整窗放开，无需为它加矩形
@@ -326,6 +375,9 @@ class DesktopSurfaceState extends State<DesktopSurface> {
 
   @override
   Widget build(BuildContext context) {
+    // 卡片几何可能刚被外层改过（加卡/删卡/改尺寸/面板里改网格），
+    // 等这一帧落定之后跟 native 对一次账。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncRegion());
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: _onPointerDown,

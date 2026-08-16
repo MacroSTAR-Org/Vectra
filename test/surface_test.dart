@@ -458,4 +458,115 @@ void main() {
     await g.up();
     await tester.pump(const Duration(milliseconds: 400));
   });
+
+  // ---------------- 窗口区域与卡片几何的对账 ----------------
+  //
+  // 窗口被 SetWindowRgn 硬裁成卡片矩形的并集，区域外既不绘制也不接收输入。
+  // 所以"区域推没推"不是性能问题，是卡片可见不可见的问题：区域过期时，
+  // 新卡片画了也会被裁掉，用户看到的就是"加了组件但桌面上没反应"。
+  group('区域对账', () {
+    /// 取最近一次推给 native 的矩形（已乘 dpr，这里 dpr=1）。
+    List<({double x, double y, double w, double h})> lastRects() {
+      final cards = pushedRegions.last['cards'] as List;
+      return [
+        for (final c in cards.cast<Map<Object?, Object?>>())
+          (
+            x: c['x']! as double,
+            y: c['y']! as double,
+            w: c['w']! as double,
+            h: c['h']! as double,
+          )
+      ];
+    }
+
+    bool covers(double x, double y, double w, double h) => lastRects().any(
+        (r) => r.x == x && r.y == y && r.w == w && r.h == h);
+
+    testWidgets('加卡之后立刻推区域——不必先去拖一下别的卡片', (tester) async {
+      final (state, store) = makeState();
+      await pumpSurface(tester, state, store);
+      pushedRegions.clear();
+
+      // 等价于 AppRoot.addCard：改模型，然后外层 setState 重建一帧
+      state.cards.add(WidgetCard(
+          id: 'fresh', pluginId: 'z', x: 900, y: 200, size: '2x2', z: 3));
+      await pumpSurface(tester, state, store);
+
+      expect(pushedRegions, isNotEmpty,
+          reason: '加卡后一帧内必须推区域，否则新卡片被裁掉，用户只能靠拖动别的卡片"救"出来');
+      expect(covers(900, 200, 236, 236), isTrue,
+          reason: '新卡片的矩形必须进区域，实际推的是 ${lastRects()}');
+    });
+
+    testWidgets('桌面一张卡片都没有时，加的第一张也要能出来', (tester) async {
+      // 最要命的场景：区域是空的（整窗被裁没），而桌面上没有任何卡片可拖，
+      // 也就没有任何办法触发重推 —— 修复前只能重启程序。
+      final state = AppState(settings: AppSettings(), cards: []);
+      final store = Store(Directory.systemTemp.createTempSync('lw-test').path);
+      await pumpSurface(tester, state, store);
+      pushedRegions.clear();
+
+      state.cards.add(WidgetCard(
+          id: 'first', pluginId: 'z', x: 300, y: 300, size: '2x2', z: 1));
+      await pumpSurface(tester, state, store);
+
+      expect(pushedRegions, isNotEmpty, reason: '空桌面加第一张卡必须推区域');
+      expect(covers(300, 300, 236, 236), isTrue,
+          reason: '第一张卡片不在区域里就永远看不见，且没有任何卡片可拖来触发重推');
+    });
+
+    testWidgets('删卡之后区域里不再留着它的矩形', (tester) async {
+      final (state, store) = makeState();
+      await pumpSurface(tester, state, store);
+      pushedRegions.clear();
+
+      state.cards.removeWhere((c) => c.id == 'anchor'); // 原本在 (500,300)
+      await pumpSurface(tester, state, store);
+
+      expect(pushedRegions, isNotEmpty, reason: '删卡后也要重推区域');
+      expect(covers(500, 300, 236, 236), isFalse,
+          reason: '删掉的卡片若留在区域里，桌面上会多出一块看不见却照样吃掉鼠标点击的死角');
+    });
+
+    testWidgets('插件请求改尺寸后，区域跟着改', (tester) async {
+      final (state, store) = makeState();
+      await pumpSurface(tester, state, store);
+      pushedRegions.clear();
+
+      // 等价于 onRequestSize：2x2 -> 4x2
+      state.cards.firstWhere((c) => c.id == 'mover').size = '4x2';
+      await pumpSurface(tester, state, store);
+
+      expect(pushedRegions, isNotEmpty, reason: '改尺寸后要重推区域');
+      expect(covers(100, 700, 484, 236), isTrue,
+          reason: '区域没跟上就只有原来 2x2 那块可见，变宽的部分被裁掉，实际推的是 ${lastRects()}');
+    });
+
+    testWidgets('面板里改网格尺寸后，区域跟着改', (tester) async {
+      final (state, store) = makeState();
+      await pumpSurface(tester, state, store);
+      pushedRegions.clear();
+
+      state.settings.gridCell = 140; // 2x2 = 140*2+12 = 292
+      await pumpSurface(tester, state, store);
+
+      expect(pushedRegions, isNotEmpty, reason: '改网格后要重推区域');
+      expect(covers(500, 300, 292, 292), isTrue,
+          reason: '卡片按新网格画大了，区域还是旧的，边缘会被裁掉，实际推的是 ${lastRects()}');
+    });
+
+    testWidgets('几何没变就不重复推，别每帧都去烦 native', (tester) async {
+      final (state, store) = makeState();
+      await pumpSurface(tester, state, store);
+      pushedRegions.clear();
+
+      // 重建好几帧，但一个几何量都没动
+      for (var i = 0; i < 3; i++) {
+        await pumpSurface(tester, state, store);
+      }
+
+      expect(pushedRegions, isEmpty,
+          reason: '几何没变还推区域，等于每帧都 SetWindowRgn，那正是当年拖影的来源');
+    });
+  });
 }
