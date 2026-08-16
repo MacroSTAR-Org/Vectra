@@ -43,6 +43,62 @@ constexpr UINT_PTR kTimerId = 1;
 
 int Scaled(int v, double s) { return static_cast<int>(v * s + 0.5); }
 
+// 系统当前是不是浅色主题。
+//
+// 幕布起得比 Flutter 引擎还早，那会儿 Dart 侧的主题设置根本读不到，所以这里
+// 直接问系统（和 win32_window.cpp 判断标题栏深浅用的是同一个键）。
+// 读不到就当浅色 —— Windows 默认就是浅色，猜错的代价也只是白底配深字。
+bool SystemUsesLightTheme() {
+  DWORD value = 0;
+  DWORD size = sizeof(value);
+  const LSTATUS st = RegGetValueW(
+      HKEY_CURRENT_USER,
+      L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+      L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size);
+  if (st != ERROR_SUCCESS) return true;
+  return value != 0;
+}
+
+// 幕布的一套配色。深浅两版只有取值不同，绘制代码完全共用。
+struct Palette {
+  Gdiplus::Color base;      // 卡片底
+  Gdiplus::Color gloss;     // 顶部高光的起始色（末端一律透明）
+  Gdiplus::Color edge;      // 描边
+  Gdiplus::Color title;     // 品牌名
+  Gdiplus::Color subtitle;  // 副标题
+  Gdiplus::Color status;    // 状态文字
+  Gdiplus::Color track;     // 进度条轨道
+  Gdiplus::Color fill;      // 进度条填充
+};
+
+Palette MakePalette(bool light) {
+  if (light) {
+    return Palette{
+        Gdiplus::Color(250, 246, 247, 250),
+        // 浅色底上再打白光就糊成一片了，这里改成从上往下压一层极淡的暗，
+        // 让顶边有收口感
+        Gdiplus::Color(10, 0, 0, 0),
+        Gdiplus::Color(38, 0, 0, 0),
+        Gdiplus::Color(238, 26, 29, 35),
+        Gdiplus::Color(140, 26, 29, 35),
+        Gdiplus::Color(110, 26, 29, 35),
+        Gdiplus::Color(30, 0, 0, 0),
+        // 浅色下天蓝太飘，用面板浅色主题那档更深的蓝
+        Gdiplus::Color(255, 21, 101, 192),
+    };
+  }
+  return Palette{
+      Gdiplus::Color(250, 18, 21, 26),
+      Gdiplus::Color(26, 255, 255, 255),
+      Gdiplus::Color(30, 255, 255, 255),
+      Gdiplus::Color(240, 255, 255, 255),
+      Gdiplus::Color(120, 255, 255, 255),
+      Gdiplus::Color(90, 255, 255, 255),
+      Gdiplus::Color(36, 255, 255, 255),
+      Gdiplus::Color(255, 124, 199, 255),
+  };
+}
+
 // 圆角矩形路径。GDI+ 没有现成的，四个角各画一段 90° 弧再连起来。
 void AddRoundRect(Gdiplus::GraphicsPath* path, Gdiplus::RectF r, float d) {
   path->AddArc(r.X, r.Y, d, d, 180.0f, 90.0f);
@@ -109,6 +165,8 @@ DWORD WINAPI SplashWindow::ThreadMain(LPVOID param) {
   wc.lpszClassName = kClassName;
   wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
   RegisterClassExW(&wc);
+
+  self->light_ = SystemUsesLightTheme();
 
   // DPI：splash 固定居中在主显示器上，跟着主屏的缩放走
   const UINT dpi = GetDpiForSystem();
@@ -285,23 +343,26 @@ void SplashWindow::Render() {
     Gdiplus::GraphicsPath path;
     AddRoundRect(&path, card, d);
 
+    const Palette pal = MakePalette(light_);
+
     // 磨砂底：这台机器上系统级毛玻璃靠不住（WCA 亚克力实测会把整窗渲染成
-    // 透明还拖慢合成），所以不去碰它，自绘一块深色底 + 顶部高光。
+    // 透明还拖慢合成），所以不去碰它，自绘一块底色 + 顶部高光。
     //
     // 底色压到接近不透明是有意的：真毛玻璃靠的是"模糊 + 半透明"，模糊那一半
     // 我们做不了，只留半透明的话，后面的窗口内容会**清清楚楚**透上来（实测
     // 能读出背后终端里的每一行字），那不是磨砂，是脏。所以这里只留一丝很淡的
     // 通透，质感交给高光渐变和描边去撑。
-    Gdiplus::SolidBrush base(Gdiplus::Color(250, 18, 21, 26));
+    Gdiplus::SolidBrush base(pal.base);
     g.FillPath(&base, &path);
 
     // 顶部高光：一层从上往下散掉的白，模拟光从上方打过来。
     // 没有它，纯色块看着就是一张死板的深色卡片。
     {
       Gdiplus::RectF hi(0.0f, 0.0f, static_cast<float>(w_px_), h_px_ * 0.55f);
-      Gdiplus::LinearGradientBrush gloss(
-          hi, Gdiplus::Color(26, 255, 255, 255), Gdiplus::Color(0, 255, 255, 255),
-          Gdiplus::LinearGradientModeVertical);
+      const Gdiplus::Color gloss_end(0, pal.gloss.GetR(), pal.gloss.GetG(),
+                                     pal.gloss.GetB());
+      Gdiplus::LinearGradientBrush gloss(hi, pal.gloss, gloss_end,
+                                         Gdiplus::LinearGradientModeVertical);
       Gdiplus::Region clip(&path);
       g.SetClip(&clip);
       g.FillRectangle(&gloss, hi);
@@ -309,7 +370,7 @@ void SplashWindow::Render() {
     }
 
     // 描边：亮一点的细线，把卡片从桌面上"抬"起来
-    Gdiplus::Pen edge(Gdiplus::Color(30, 255, 255, 255), 1.0f * s);
+    Gdiplus::Pen edge(pal.edge, 1.0f * s);
     g.DrawPath(&edge, &path);
 
     // ---- Logo ----
@@ -331,7 +392,7 @@ void SplashWindow::Render() {
     {
       Gdiplus::Font font(L"Segoe UI", 26.0f * s, Gdiplus::FontStyleBold,
                          Gdiplus::UnitPixel);
-      Gdiplus::SolidBrush brush(Gdiplus::Color(240, 255, 255, 255));
+      Gdiplus::SolidBrush brush(pal.title);
       Gdiplus::RectF box(0.0f, 128.0f * s, static_cast<float>(w_px_),
                          40.0f * s);
       g.DrawString(L"Vectra", -1, &font, box, &center, &brush);
@@ -341,7 +402,7 @@ void SplashWindow::Render() {
     {
       Gdiplus::Font font(L"Microsoft YaHei UI", 12.0f * s,
                          Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-      Gdiplus::SolidBrush brush(Gdiplus::Color(120, 255, 255, 255));
+      Gdiplus::SolidBrush brush(pal.subtitle);
       Gdiplus::RectF box(0.0f, 170.0f * s, static_cast<float>(w_px_),
                          24.0f * s);
       g.DrawString(L"桌面磁贴小组件", -1, &font, box, &center, &brush);
@@ -355,7 +416,7 @@ void SplashWindow::Render() {
     {
       Gdiplus::GraphicsPath track;
       AddRoundRect(&track, Gdiplus::RectF(bar_x, bar_y, bar_w, bar_h), bar_h);
-      Gdiplus::SolidBrush track_brush(Gdiplus::Color(36, 255, 255, 255));
+      Gdiplus::SolidBrush track_brush(pal.track);
       g.FillPath(&track_brush, &track);
 
       if (total_ <= 0) {
@@ -371,7 +432,7 @@ void SplashWindow::Render() {
         const float sx = bar_x + (bar_w - seg) * static_cast<float>(phase);
         Gdiplus::GraphicsPath ind;
         AddRoundRect(&ind, Gdiplus::RectF(sx, bar_y, seg, bar_h), bar_h);
-        Gdiplus::SolidBrush ind_brush(Gdiplus::Color(150, 124, 199, 255));
+        Gdiplus::SolidBrush ind_brush(Gdiplus::Color(160, pal.fill.GetR(), pal.fill.GetG(), pal.fill.GetB()));
         g.FillPath(&ind_brush, &ind);
       }
 
@@ -381,7 +442,7 @@ void SplashWindow::Render() {
         Gdiplus::GraphicsPath fill;
         AddRoundRect(&fill, Gdiplus::RectF(bar_x, bar_y, filled, bar_h), bar_h);
         // 品牌天蓝，和磁贴、面板的强调色是同一个
-        Gdiplus::SolidBrush fill_brush(Gdiplus::Color(255, 124, 199, 255));
+        Gdiplus::SolidBrush fill_brush(pal.fill);
         g.FillPath(&fill_brush, &fill);
       }
     }
@@ -396,7 +457,7 @@ void SplashWindow::Render() {
       }
       Gdiplus::Font font(L"Microsoft YaHei UI", 11.0f * s,
                          Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-      Gdiplus::SolidBrush brush(Gdiplus::Color(90, 255, 255, 255));
+      Gdiplus::SolidBrush brush(pal.status);
       Gdiplus::RectF box(0.0f, 232.0f * s, static_cast<float>(w_px_),
                          22.0f * s);
       g.DrawString(text, -1, &font, box, &center, &brush);

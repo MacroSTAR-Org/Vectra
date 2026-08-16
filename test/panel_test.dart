@@ -344,6 +344,38 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   });
 
+  // ---------------- 设置改动的日志描述 ----------------
+  //
+  // 配置类问题（"我明明关了它怎么还在"）最难查，因为改动本身不留痕迹。
+  // 这几条盯着那份痕迹：不是"有没有打日志"，而是"能不能看出改了什么"。
+  group('设置改动描述', () {
+    test('只报真正变了的项，并带上新旧值', () {
+      final before = AppSettings().toJson();
+      final after = AppSettings().toJson();
+      after['locked'] = true;
+      after['gridCell'] = 140;
+
+      final diff = describeSettingsDiff(before, after);
+
+      expect(diff.length, 2, reason: '没变的项不该出现，否则一次改动刷几十行');
+      expect(diff, contains('locked: false -> true'));
+      expect(diff.any((s) => s.startsWith('gridCell: ')), isTrue);
+      expect(diff.firstWhere((s) => s.startsWith('gridCell: ')),
+          contains('-> 140'));
+    });
+
+    test('什么都没改就不出声', () {
+      final same = AppSettings().toJson();
+      expect(describeSettingsDiff(same, Map.of(same)), isEmpty);
+    });
+
+    test('新增的设置项也能被认出来', () {
+      // 插件市场以后会带进来新键，不该因为旧快照里没有就漏掉
+      final diff = describeSettingsDiff(const {}, const {'newKey': 3});
+      expect(diff, contains('newKey: null -> 3'));
+    });
+  });
+
   // ---------------- 插件 number 设置项的精度 ----------------
   //
   // 插件清单里的 number 字段允许带小数（step: 0.1 之类），

@@ -71,6 +71,10 @@ class SplashWindow {
   int h_px_ = 0;
   double scale_ = 1.0;
 
+  // 跟随系统深浅色。幕布比 Flutter 引擎起得早，读不到 Dart 侧的主题设置，
+  // 所以直接问系统；读不到就按浅色。
+  bool light_ = true;
+
   // 目标进度与实际显示的进度。显示值向目标值缓动，避免"啪"地跳一格。
   double target_ = 0.0;
   double shown_ = 0.0;

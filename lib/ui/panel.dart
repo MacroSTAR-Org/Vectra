@@ -197,6 +197,9 @@ class _ControlPanelState extends State<ControlPanel> {
   void initState() {
     super.initState();
     _lastBrightness = effectiveBrightness(_s);
+    // 先拍一张基线，否则第一次改动会把所有设置项都算成"变了"
+    _settingsSnapshot = widget.state.settings.toJson();
+    Log.i('panel', '打开设置窗口（页 $_tab）');
     PackageInfo.fromPlatform().then((info) {
       if (mounted) setState(() => _pkgInfo = info);
     });
@@ -213,7 +216,29 @@ class _ControlPanelState extends State<ControlPanel> {
   /// 都触发的——拖一下滑块就是每秒几十次全量重建，界面直接卡死。
   ///
   /// store.save 本身已经有 300ms 去抖，所以这里只需要拦住 onChanged。
+  /// 上一次记过日志的设置快照，用来算出"这次到底改了哪一项"
+  Map<String, Object?> _settingsSnapshot = const {};
+
+  /// 把设置改动记成"键: 旧值 -> 新值"。
+  ///
+  /// 用快照对比而不是在每个控件的回调里各写一行：设置项有几十个，靠人肉埋点
+  /// 迟早漏，而且插件市场以后还会带进来新的。这里一次对比全覆盖，
+  /// 以后加设置项也不用管日志。
+  void _logSettingsDiff() {
+    final now = widget.state.settings.toJson();
+    if (_settingsSnapshot.isEmpty) {
+      _settingsSnapshot = now;
+      return;
+    }
+    final changed = describeSettingsDiff(_settingsSnapshot, now);
+    if (changed.isNotEmpty) {
+      Log.i('panel', '改设置 ${changed.join("；")}');
+    }
+    _settingsSnapshot = now;
+  }
+
   void _commit() {
+    _logSettingsDiff();
     widget.store.save(widget.state);
     setState(() {});
     // 立刻检查生效亮度：手动切换主题时希望面板外壳（背景 / fluent 控件的
@@ -269,6 +294,26 @@ class _ControlPanelState extends State<ControlPanel> {
       return Stack(fit: StackFit.expand, children: [
         Positioned.fill(child: body),
         ..._resizeHandles(),
+        // 描边。窗口是无边框的，浅色主题下面板底色和浅色桌面/浅色应用背景
+        // 挨在一起时几乎分不出边界，一圈淡黑色才能把窗口"框"出来。
+        //
+        // 圆角半径要和 native 那边对齐：panel_window.cpp 的 kCornerRadiusLogical
+        // 是 12，窗口本身就被裁成这个圆角，画大画小都会露馅。
+        //
+        // 必须 IgnorePointer：它铺满整个窗口且盖在最上层，不挡住指针的话
+        // 缩放手柄和界面全都点不到了。
+        const Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.all(Radius.circular(12)),
+                border: Border.fromBorderSide(
+                  BorderSide(color: Color(0x38000000)),
+                ),
+              ),
+            ),
+          ),
+        ),
       ]);
     }
 
@@ -1636,10 +1681,15 @@ class _ControlPanelState extends State<ControlPanel> {
     // 先乐观改开关，写失败再弹回去——注册表写入通常是毫秒级，
     // 让开关卡住等 native 反而显得迟钝
     setState(() => _autoStart = on);
+    Log.i('panel', '开机自启 -> $on');
     try {
       final actual = await NativeBridge.setAutoStart(on);
+      if (actual != on) {
+        Log.w('panel', '开机自启写入后回读为 $actual，与请求的 $on 不一致');
+      }
       if (mounted) setState(() => _autoStart = actual);
     } catch (e) {
+      Log.e('panel', '修改开机自启失败: $e');
       if (!mounted) return;
       setState(() {
         _autoStart = !on;
@@ -1663,12 +1713,14 @@ class _ControlPanelState extends State<ControlPanel> {
       );
       if (path == null) return; // 用户取消
       await File(path).writeAsString(widget.store.encodeConfig(widget.state));
+      Log.i('panel', '导出备份 ${widget.state.cards.length} 张卡片 -> $path');
       if (!mounted) return;
       setState(() {
         _backupFailed = false;
         _backupHint = '已导出到 $path';
       });
     } catch (e) {
+      Log.e('panel', '导出备份失败: $e');
       if (!mounted) return;
       setState(() {
         _backupFailed = true;
@@ -1701,6 +1753,10 @@ class _ControlPanelState extends State<ControlPanel> {
       widget.state.ai = incoming.ai;
 
       await widget.store.saveNow(widget.state);
+      Log.i('panel',
+          '导入备份 ${incoming.cards.length} 张卡片（来自 $path），布局已整体替换');
+      // 导入会把设置整个换掉，快照跟着重置，否则下一次改动会报出一堆假差异
+      _settingsSnapshot = widget.state.settings.toJson();
       if (!mounted) return;
       setState(() {
         _backupFailed = false;
@@ -2091,6 +2147,28 @@ String formatNumber(double v, double step) {
   final d = decimalsOf(step);
   return d == 0 ? '${v.round()}' : v.toStringAsFixed(d);
 }
+
+// ---------------- 设置改动的可读描述 ----------------
+
+/// 算出两份设置快照之间"到底改了哪几项"，每项写成「键: 旧值 -> 新值」。
+///
+/// 单独抽出来是因为这是纯数据变换，值得直接测：配置类问题（"我明明关了它
+/// 怎么还在"）最难查，靠的就是这行日志，而它一旦退化成只说"设置变了"，
+/// 就等于没写。
+///
+/// 用快照对比而不是在每个控件回调里各写一行：设置项有几十个，靠人肉埋点迟早
+/// 会漏，插件市场以后还会带进来新的。这里一次对比全覆盖。
+@visibleForTesting
+List<String> describeSettingsDiff(
+    Map<String, Object?> before, Map<String, Object?> after) {
+  final changed = <String>[];
+  after.forEach((key, value) {
+    final old = before[key];
+    if (old != value) changed.add('$key: $old -> $value');
+  });
+  return changed;
+}
+
 /// Win32 的窗口命中码，缩放时原样传给 native。
 ///
 /// 数值来自 winuser.h，不能改：native 侧直接把它塞进

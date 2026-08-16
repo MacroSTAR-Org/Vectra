@@ -346,6 +346,7 @@ class DesktopSurfaceState extends State<DesktopSurface> {
 
   void _endDrag() {
     final moved = _moved;
+    final card = _dragCard;
     _dragPointer = null;
     _dragCard = null;
     _moved = false;
@@ -353,6 +354,12 @@ class DesktopSurfaceState extends State<DesktopSurface> {
     // 先关拖拽模式，再推区域，否则 native 会因为仍在拖拽而跳过这次裁剪
     NativeBridge.setDragging(false).then((_) => _pushRegion());
     if (moved) widget.store.save(widget.state);
+    // 只记落点，不记过程：拖动中每帧都记的话，一次拖拽就能刷几百行，
+    // 真正有用的信息反而被冲掉了。
+    if (moved && card != null) {
+      Log.i('surface',
+          '拖动 ${card.pluginId}(${card.id}) 落到 ${card.x.round()},${card.y.round()}');
+    }
     if (_editingId != null) _scheduleEditIdle();
   }
 

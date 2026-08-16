@@ -285,11 +285,14 @@ class AppRootState extends State<AppRoot> with TrayListener {
 
   @override
   void onTrayMenuItemClick(MenuItem item) async {
+    // 托盘是用户操作里最"没有痕迹"的一类：点完就没了，事后全靠猜。
+    Log.i('tray', '点击菜单项 ${item.key}');
     switch (item.key) {
       case 'panel':
         openPanel();
       case 'lock':
         widget.state.settings.locked = !widget.state.settings.locked;
+        Log.i('tray', '锁定桌面 -> ${widget.state.settings.locked}');
         widget.store.save(widget.state);
         await _rebuildTrayMenu();
         setState(() {});
@@ -297,6 +300,9 @@ class AppRootState extends State<AppRoot> with TrayListener {
         _loadWallpaper();
       case 'rescan':
         await widget.registry.scan();
+        Log.i('plugin',
+            '重新扫描插件，现有 ${widget.registry.list().length} 个'
+            '${widget.registry.errors.isEmpty ? "" : "，失败 ${widget.registry.errors.length} 个"}');
         setState(() => _revision++);
       case 'quit':
         // saveNow 而不是 save：去抖的 300ms 还没到就退出会丢掉最后一次改动。
@@ -321,10 +327,13 @@ class AppRootState extends State<AppRoot> with TrayListener {
   void openPanel({String? cardId, int? tab}) {
     panelCardRequest.value = cardId;
     panelTabRequest.value = tab ?? (cardId != null ? 1 : 0);
+    Log.i('app',
+        '打开设置窗口${cardId == null ? "" : "（定位卡片 $cardId）"}');
     NativeBridge.showPanelWindow();
   }
 
   void hidePanelWindow() {
+    Log.i('app', '关闭设置窗口');
     NativeBridge.hidePanelWindow();
     // 设置可能改了，让卡片按新参数重建
     setState(() => _revision++);
@@ -403,7 +412,7 @@ class AppRootState extends State<AppRoot> with TrayListener {
       target,
     );
     final maxZ = widget.state.cards.fold<int>(0, (m, c) => math.max(m, c.z));
-    widget.state.cards.add(WidgetCard(
+    final card = WidgetCard(
       id: '${plugin.id}-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}',
       pluginId: plugin.id,
       x: spot.x,
@@ -411,13 +420,19 @@ class AppRootState extends State<AppRoot> with TrayListener {
       size: plugin.defaultSize,
       z: maxZ + 1,
       settings: plugin.defaultSettings(),
-    ));
+    );
+    widget.state.cards.add(card);
+    Log.i('app',
+        '添加组件 ${plugin.id} 于 ${card.x.round()},${card.y.round()} '
+        '(${card.size})，现有 ${widget.state.cards.length} 张');
     widget.store.save(widget.state);
     setState(() => _revision++);
   }
 
   void removeCard(WidgetCard card) {
     widget.state.cards.removeWhere((c) => c.id == card.id);
+    Log.i('app',
+        '移除组件 ${card.pluginId}(${card.id})，剩 ${widget.state.cards.length} 张');
     widget.store.save(widget.state);
     setState(() => _revision++);
   }

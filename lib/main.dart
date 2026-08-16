@@ -56,16 +56,23 @@ Future<void> main(List<String> args) async {
 
   final dir = AppPaths.root;
   Log.i('app', '用户数据目录: $dir');
+
+  // 启动各阶段分别计时。"启动慢"是最难复现的一类反馈，有了这几个数字
+  // 就能直接指出是读配置慢、扫插件慢，还是后面编译插件慢。
+  final boot = Stopwatch()..start();
   final store = Store(dir);
   final state = await store.load();
+  final loadMs = boot.elapsedMilliseconds;
 
   final registry = PluginRegistry(AppPaths.pluginsDir);
   await registry.scan();
+  final scanMs = boot.elapsedMilliseconds - loadMs;
   if (registry.errors.isNotEmpty) {
     registry.errors.forEach((k, v) => Log.e('plugin', '加载失败 $k: $v'));
   }
   Log.i('plugin', '已加载 ${registry.list().length} 个: '
       '${registry.list().map((m) => m.id).join(", ")}');
+  Log.i('app', '启动耗时 读配置 ${loadMs}ms / 扫插件 ${scanMs}ms');
 
   if (state.cards.isEmpty) {
     state.cards.addAll(_defaultLayout());

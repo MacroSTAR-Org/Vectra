@@ -149,18 +149,32 @@ class PluginHost {
         }
       }
     }
+    // 插件请求外部接口是最常出问题的一环：接口挂了、限流了、字段改了、
+    // 网络不通……而这些在界面上一律表现为"组件不显示数据"。所以整条链路
+    // 都要留痕：发起、结果、耗时。URL 只记 host+path，query 里可能有密钥
+    // （日志系统还有一道统一脱敏兜底，这里先自己收着）。
+    final target = '${uri.host}${uri.path}';
+    Log.d('plugin', '$pluginId 请求 $target');
+    final sw = Stopwatch()..start();
     try {
       final res =
           await http.get(uri, headers: headers).timeout(const Duration(seconds: 15));
+      sw.stop();
       if (res.statusCode < 200 || res.statusCode >= 300) {
+        Log.w('plugin',
+            '$pluginId 请求返回 ${res.statusCode} $target（${sw.elapsedMilliseconds}ms）');
         return {'ok': false, 'error': 'HTTP ${res.statusCode}'};
       }
+      Log.i('plugin',
+          '$pluginId 请求成功 $target ${res.bodyBytes.length}B（${sw.elapsedMilliseconds}ms）');
       return {'ok': true, 'data': jsonDecode(utf8.decode(res.bodyBytes))};
     } catch (e) {
+      sw.stop();
       // 异常文本里常常带着完整请求 URL，而 URL 的 query 可能含密钥
       // （插件自己拼的接口地址不受我们控制）。回给插件的错误只保留主机名，
       // 真正的诊断信息进日志——日志那边还有一道统一脱敏兜底。
-      Log.w('plugin', '$pluginId 请求失败 ${uri.host}${uri.path}: $e');
+      Log.w('plugin',
+          '$pluginId 请求失败 $target（${sw.elapsedMilliseconds}ms）: $e');
       return {'ok': false, 'error': '请求失败：${uri.host}'};
     }
   }
@@ -172,8 +186,11 @@ class PluginHost {
     }
     try {
       await launchUrl(uri);
+      // 插件把用户支出到浏览器是件"看得见的大事"，出问题时要能对上时间点
+      Log.i('plugin', '$pluginId 打开外部链接 ${uri.host}${uri.path}');
       return {'ok': true};
     } catch (e) {
+      Log.w('plugin', '$pluginId 打开外部链接失败 ${uri.host}: $e');
       return {'ok': false, 'error': '$e'};
     }
   }

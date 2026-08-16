@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_js/flutter_js.dart';
 
+import '../core/logger.dart';
 import 'manifest.dart';
 import 'prelude.dart';
 
@@ -56,6 +57,9 @@ class PluginRuntime {
     required int cols,
     required int rows,
   }) async {
+    // 挂载耗时是启动慢的头号嫌疑：插件多起来之后，这里的累计时间直接决定
+    // 启动幕布挂多久。逐个记下来，慢的那个一眼就能挑出来。
+    final sw = Stopwatch()..start();
     try {
       final rt = getJavascriptRuntime(xhr: false);
       _rt = rt;
@@ -84,7 +88,11 @@ class PluginRuntime {
       });
       _guard(() => rt.evaluate('lw.__mount($ctx);'));
       _pump();
+      sw.stop();
+      Log.d('plugin',
+          '${manifest.id} 挂载完成 $instanceId（${sw.elapsedMilliseconds}ms）');
     } catch (e) {
+      sw.stop();
       _fail('插件挂载失败：$e');
     }
   }
@@ -191,6 +199,9 @@ class PluginRuntime {
   }
 
   void _fail(String message) {
+    // 插件一旦失控就再也不调度了，界面上只剩一个错误框。不记下来的话，
+    // 用户报"组件不动了"时无从查起 —— 是崩了、超时了、还是清单写错了。
+    if (!_dead) Log.e('plugin', '${manifest.id}($instanceId) $message');
     _dead = true;
     _error = message;
     error.value = message;
