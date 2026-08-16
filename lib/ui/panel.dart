@@ -22,6 +22,7 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/logger.dart';
 import '../core/paths.dart';
 import '../core/theme.dart';
 import '../model/ai_settings.dart';
@@ -160,6 +161,14 @@ class ControlPanel extends StatefulWidget {
 class _ControlPanelState extends State<ControlPanel> {
   late int _tab = widget.initialTab ?? (widget.focusCardId != null ? 1 : 0);
 
+  /// 导航栏是展开还是收成图标条。
+  ///
+  /// 必须自己存着：NavigationView 的收起按钮只通过 onDisplayModeChanged
+  /// 把新模式**报出来**，它自己不留状态。之前这里给的是写死的
+  /// PaneDisplayMode.expanded，按钮按下去内部虽然变了，可下一次重建又被
+  /// 这个常量按回展开——表现就是"点了没反应"。
+  PaneDisplayMode _paneMode = PaneDisplayMode.expanded;
+
   /// 关于页的版本信息；异步加载，未就绪时显示"获取中…"
   PackageInfo? _pkgInfo;
 
@@ -252,9 +261,15 @@ class _ControlPanelState extends State<ControlPanel> {
       ],
     );
 
-    // 独立窗口：铺满客户区，底色由 panel_app 负责
+    // 独立窗口：铺满客户区，底色由 panel_app 负责。
+    // 四周叠一圈缩放手柄——这窗口没有系统缩放边框（见 panel_window.cpp）。
     if (!widget.embedded) {
-      return body;
+      // fit 用 expand：Stack 的子节点全是 Positioned 时，它自己会塌缩到约束
+      // 允许的最小尺寸，手柄就跟着缩没了（surface.dart 里踩过同样的坑）
+      return Stack(fit: StackFit.expand, children: [
+        Positioned.fill(child: body),
+        ..._resizeHandles(),
+      ]);
     }
 
     // 内嵌模式（保留是为了别把这条路径悄悄弄坏）：遮罩 + 居中盒子
@@ -287,10 +302,15 @@ class _ControlPanelState extends State<ControlPanel> {
 
   Widget _navigation() {
     return NavigationView(
+      // 收起按钮只负责把新模式报出来，记不记得住得靠调用方。
+      // 这个回调挂在 NavigationView 上，不是 NavigationPane 上。
+      onDisplayModeChanged: (m) {
+        if (m != _paneMode) setState(() => _paneMode = m);
+      },
       pane: NavigationPane(
         selected: _tab,
         onChanged: (i) => setState(() => _tab = i),
-        displayMode: PaneDisplayMode.expanded,
+        displayMode: _paneMode,
         size: const NavigationPaneSize(openWidth: 220),
         // 品牌行不放了：标题栏已有「Vectra 设置」，导航栏顶部再放一遍重复
         items: [
@@ -407,6 +427,77 @@ class _ControlPanelState extends State<ControlPanel> {
         const SizedBox(width: 4),
       ]),
     );
+  }
+
+  /// 窗口四周的缩放手柄。
+  ///
+  /// 这窗口是无边框的，没有系统缩放边缘可用（缘由见 panel_window.cpp 里
+  /// ResizeFrom 的注释），只能自己在边上铺一圈透明区域，按下时喊 native
+  /// 交给系统去拖。
+  ///
+  /// 边宽 6px、角落 12x12：太窄了不好抓，太宽会盖住边上的控件。角落必须
+  /// 压在边之后（Stack 里靠后者在上），否则拐角处只能单向缩放。
+  List<Widget> _resizeHandles() {
+    const t = 6.0; // 边的厚度
+    const c = 12.0; // 角的边长
+
+    Widget h({
+      double? left,
+      double? top,
+      double? right,
+      double? bottom,
+      double? width,
+      double? height,
+      required int edge,
+      required MouseCursor cursor,
+    }) {
+      return Positioned(
+        left: left,
+        top: top,
+        right: right,
+        bottom: bottom,
+        width: width,
+        height: height,
+        child: MouseRegion(
+          cursor: cursor,
+          child: Listener(
+            // behavior 必须是 opaque：手柄是透明的，不这样按不到
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (e) {
+              if (e.kind != PointerDeviceKind.mouse) return;
+              if ((e.buttons & kPrimaryButton) == 0) return;
+              Log.d('panel', '缩放手柄按下 edge=$edge');
+              NativeBridge.panelResize(edge);
+            },
+          ),
+        ),
+      );
+    }
+
+    return [
+      // 四条边
+      h(left: c, right: c, top: 0, height: t,
+          edge: _PanelEdge.top, cursor: SystemMouseCursors.resizeUpDown),
+      h(left: c, right: c, bottom: 0, height: t,
+          edge: _PanelEdge.bottom, cursor: SystemMouseCursors.resizeUpDown),
+      h(top: c, bottom: c, left: 0, width: t,
+          edge: _PanelEdge.left, cursor: SystemMouseCursors.resizeLeftRight),
+      h(top: c, bottom: c, right: 0, width: t,
+          edge: _PanelEdge.right, cursor: SystemMouseCursors.resizeLeftRight),
+      // 四个角压在边上面
+      h(left: 0, top: 0, width: c, height: c,
+          edge: _PanelEdge.topLeft,
+          cursor: SystemMouseCursors.resizeUpLeftDownRight),
+      h(right: 0, top: 0, width: c, height: c,
+          edge: _PanelEdge.topRight,
+          cursor: SystemMouseCursors.resizeUpRightDownLeft),
+      h(left: 0, bottom: 0, width: c, height: c,
+          edge: _PanelEdge.bottomLeft,
+          cursor: SystemMouseCursors.resizeUpRightDownLeft),
+      h(right: 0, bottom: 0, width: c, height: c,
+          edge: _PanelEdge.bottomRight,
+          cursor: SystemMouseCursors.resizeUpLeftDownRight),
+    ];
   }
 
   void _onTitleDrag(PointerDownEvent e) {
@@ -1999,4 +2090,18 @@ int decimalsOf(double step) {
 String formatNumber(double v, double step) {
   final d = decimalsOf(step);
   return d == 0 ? '${v.round()}' : v.toStringAsFixed(d);
+}
+/// Win32 的窗口命中码，缩放时原样传给 native。
+///
+/// 数值来自 winuser.h，不能改：native 侧直接把它塞进
+/// WM_NCLBUTTONDOWN 的 wParam 交给系统。
+class _PanelEdge {
+  static const int left = 10; // HTLEFT
+  static const int right = 11; // HTRIGHT
+  static const int top = 12; // HTTOP
+  static const int topLeft = 13; // HTTOPLEFT
+  static const int topRight = 14; // HTTOPRIGHT
+  static const int bottom = 15; // HTBOTTOM
+  static const int bottomLeft = 16; // HTBOTTOMLEFT
+  static const int bottomRight = 17; // HTBOTTOMRIGHT
 }

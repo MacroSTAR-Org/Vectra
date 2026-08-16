@@ -190,6 +190,14 @@ class NativeBridge {
   static Future<void> panelToggleMaximize() =>
       _channel.invokeMethod<void>('panelToggleMaximize');
 
+  /// 从窗口某条边/某个角开始缩放。
+  ///
+  /// 传的是 Win32 的命中码（HTLEFT=10 那一套，见 PanelEdge）。窗口没有系统
+  /// 缩放边框，也没法靠 WM_NCHITTEST——Flutter 子窗口把鼠标消息全吃了，
+  /// 所以由 Flutter 侧的边缘手柄按下时喊一声，native 再交给系统去拖。
+  static Future<void> panelResize(int edge) =>
+      _channel.invokeMethod<void>('panelResize', edge);
+
   /// 通知侧边栏那个引擎重新读一遍配置。
   /// 两个引擎不共享 isolate，AI 配置由本引擎写进 config.json，
   /// 不喊一声的话侧边栏要等到下次唤出才知道变了。

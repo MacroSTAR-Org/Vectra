@@ -56,15 +56,17 @@ int Scaled(int logical, UINT dpi) {
 // 无边框窗口的圆角。Win11 用 DWM 圆角（dwm_round_ok_ 时**不要**区域裁剪——
 // SetWindowRgn 会把 DWM 的圆角盖掉，两者不能共存）；Win10 用区域裁剪模拟。
 // 最大化时铺满屏幕不留圆角。SetWindowRgn 成功后 region 归系统所有。
-void ApplyRoundedRegion(HWND hwnd, int w, int h, bool apply) {
+// redraw：拖动缩放期间传 FALSE。每帧都带重绘地重设窗口区域会让整窗反复
+// 擦除重画，表现就是持续闪烁；松手时再补一次 TRUE 把圆角刷干净即可。
+void ApplyRoundedRegion(HWND hwnd, int w, int h, bool apply, BOOL redraw) {
   if (!apply) {
-    SetWindowRgn(hwnd, nullptr, TRUE);
+    SetWindowRgn(hwnd, nullptr, redraw);
     return;
   }
   const UINT dpi = GetDpiForWindow(hwnd);
   const int d = Scaled(kCornerRadiusLogical, dpi) * 2;
   HRGN rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, d, d);
-  SetWindowRgn(hwnd, rgn, TRUE);
+  SetWindowRgn(hwnd, rgn, redraw);
 }
 
 }  // namespace
@@ -107,6 +109,26 @@ LRESULT PanelWindow::Handle(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
   }
 
   switch (msg) {
+    // 整个客户区都被 Flutter 的子窗口盖着，没有一块地方需要我们擦背景。
+    // 返回非 0 表示"已经擦过了"，系统就不会再拿黑色背景刷刷一遍 ——
+    // 这是拖动缩放时整窗黑闪的另一半原因（另一半是 WS_CLIPCHILDREN）。
+    case WM_ERASEBKGND:
+      return 1;
+    case WM_ENTERSIZEMOVE:
+      in_size_move_ = true;
+      return 0;
+    case WM_EXITSIZEMOVE: {
+      in_size_move_ = false;
+      // 拖动期间区域是按 bRedraw=FALSE 设的，松手后补一次带重绘的，
+      // 保证圆角最终是干净的
+      if (!dwm_round_ok_) {
+        RECT rc{};
+        GetClientRect(hwnd, &rc);
+        ApplyRoundedRegion(hwnd, rc.right - rc.left, rc.bottom - rc.top,
+                           !IsZoomed(hwnd), TRUE);
+      }
+      return 0;
+    }
     case WM_SIZE: {
       // 子视图铺满客户区；缩放后 Win10 的区域圆角要按新尺寸重算
       RECT rc{};
@@ -117,7 +139,9 @@ LRESULT PanelWindow::Handle(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         MoveWindow(child_, 0, 0, cw, ch, TRUE);
       }
       if (!dwm_round_ok_) {
-        ApplyRoundedRegion(hwnd, cw, ch, !IsZoomed(hwnd));
+        // 同理：拖动中每帧 SetWindowRgn 都带重绘的话，整窗会被反复擦亮擦暗
+        ApplyRoundedRegion(hwnd, cw, ch, !IsZoomed(hwnd),
+                           in_size_move_ ? FALSE : TRUE);
       }
       return 0;
     }
@@ -206,8 +230,12 @@ int64_t PanelWindow::Create(int64_t engine_id) {
   const int x = wa.left + ((wa.right - wa.left) - w) / 2;
   const int y = wa.top + ((wa.bottom - wa.top) - h) / 2;
 
+  // WS_CLIPCHILDREN：界面全部由 Flutter 的子窗口画，父窗口不该再往那块地方
+  // 涂东西。不加的话每次 WM_SIZE 父窗口都会把整个客户区先擦一遍（背景刷是
+  // 黑的），子窗口随后才重画，拖动缩放时就是整窗一直黑闪。
   const DWORD ex_style = WS_EX_APPWINDOW;
-  hwnd_ = CreateWindowEx(ex_style, kClassName, kTitle, WS_POPUP,
+  hwnd_ = CreateWindowEx(ex_style, kClassName, kTitle,
+                         WS_POPUP | WS_CLIPCHILDREN,
                          x, y, w, h, nullptr, nullptr, wc.hInstance, this);
   if (!hwnd_) {
     printf("[panel] 建窗口失败 err=%lu\n", GetLastError());
@@ -228,7 +256,7 @@ int64_t PanelWindow::Create(int64_t engine_id) {
   GetClientRect(hwnd_, &rc);
   const int cw = rc.right - rc.left;
   const int ch = rc.bottom - rc.top;
-  ApplyRoundedRegion(hwnd_, cw, ch, !dwm_round_ok_ && !IsZoomed(hwnd_));
+  ApplyRoundedRegion(hwnd_, cw, ch, !dwm_round_ok_ && !IsZoomed(hwnd_), TRUE);
   FlutterDesktopViewControllerProperties props{};
   props.width = cw;
   props.height = ch;
@@ -297,6 +325,39 @@ void PanelWindow::DragMove() {
   if (!hwnd_) return;
   ReleaseCapture();
   SendMessage(hwnd_, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+}
+
+// 无边框窗口的缩放，和上面的拖动是同一个套路。
+//
+// 这个窗口没有 WS_THICKFRAME（加了会在 Win10 上画出一圈约 7px 的可见边框），
+// 而且就算加了也没用：Flutter 的子窗口铺满整个客户区，鼠标消息全被它吃掉，
+// 父窗口的 WM_NCHITTEST 压根不会为客户区内的点触发，系统缩放边缘点不到。
+//
+// 所以缩放改由 Flutter 侧发起：那边在窗口四周放一圈透明手柄，指针按下时
+// 把对应的命中码传过来，这里补一发 WM_NCLBUTTONDOWN，系统随即接管鼠标、
+// 进入标准的窗口缩放循环——最小尺寸、贴边、多显示器都由系统照常处理，
+// 我们不用自己算一行几何。
+void PanelWindow::ResizeFrom(int edge) {
+  if (!hwnd_) return;
+  // 最大化状态下拖边缘缩放，系统行为是原地把窗口拉变形却仍标记为最大化，
+  // 后面点"还原"会跳回一个和屏幕无关的尺寸。直接忽略更干净。
+  if (IsZoomed(hwnd_)) return;
+  // 只认这九个合法命中码，别让上层随手传个数字进来就发出去
+  switch (edge) {
+    case HTLEFT:
+    case HTRIGHT:
+    case HTTOP:
+    case HTBOTTOM:
+    case HTTOPLEFT:
+    case HTTOPRIGHT:
+    case HTBOTTOMLEFT:
+    case HTBOTTOMRIGHT:
+      break;
+    default:
+      return;
+  }
+  ReleaseCapture();
+  SendMessage(hwnd_, WM_NCLBUTTONDOWN, static_cast<WPARAM>(edge), 0);
 }
 
 void PanelWindow::Minimize() {

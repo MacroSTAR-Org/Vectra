@@ -50,6 +50,10 @@ class PanelWindow {
   void Minimize();
   void ToggleMaximize();
 
+  // 从窗口边缘开始缩放。edge 用 Win32 的 HTLEFT/HTTOPRIGHT 等命中码，
+  // 由 Flutter 侧的边缘手柄在指针按下时传进来（缘由见 .cpp 里 ResizeFrom 的注释）。
+  void ResizeFrom(int edge);
+
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l);
   LRESULT Handle(HWND hwnd, UINT msg, WPARAM w, LPARAM l);
@@ -62,6 +66,10 @@ class PanelWindow {
   // Win11 上 DWM 圆角设置是否生效。生效就走 DWM（区域会盖掉它，两者不能共存），
   // 否则用 SetWindowRgn 裁剪模拟圆角（Win10 没有 DWM 圆角）。
   bool dwm_round_ok_ = false;
+
+  // 是否正处在系统的窗口拖动/缩放模态循环里（WM_ENTERSIZEMOVE ~ WM_EXITSIZEMOVE）。
+  // 这期间刻意不带重绘地更新子窗口和窗口区域，否则整窗会一直闪。
+  bool in_size_move_ = false;
 };
 
 #endif  // RUNNER_PANEL_WINDOW_H_

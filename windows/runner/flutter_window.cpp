@@ -423,6 +423,16 @@ void HandleMethodCall(
     result->Success();
     return;
   }
+  if (call.method_name() == "panelResize") {
+    const auto* edge = std::get_if<int32_t>(call.arguments());
+    if (!edge) {
+      result->Error("bad_args", "expected an int hit-test code");
+      return;
+    }
+    if (PanelWindow* p = PanelWindow::instance()) p->ResizeFrom(*edge);
+    result->Success();
+    return;
+  }
 
   if (call.method_name() == "reloadSidebar") {
     // 控制面板改完 AI 配置：叫侧边栏那个引擎重新读一遍 state.json。

@@ -7,6 +7,8 @@
 import 'dart:io';
 
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kPrimaryMouseButton;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vectra/model/settings.dart';
@@ -184,6 +186,160 @@ void main() {
 
     expect(tester.takeException(), isNull,
         reason: '窄面板下「其他」页不能有 RenderFlex 溢出');
+
+    await tester.pump(const Duration(milliseconds: 400));
+  });
+
+  testWidgets('导航栏收起按钮按下去要真的收起（而且记得住）', (tester) async {
+    // NavigationView 的收起按钮只把新模式报出来，自己不留状态。
+    // displayMode 以前写死 expanded，按钮按下去下一帧又被按回展开 ——
+    // 表现就是"点了没反应"。
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+            const MethodChannel('vectra/native'), (call) async => null);
+
+    // 按真实窗口来：900x640 是 panel_window.cpp 里的 kWidth/kHeight，
+    // embedded:false 是 panel_app.dart 里实际用的模式
+    tester.view.physicalSize = const Size(900, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final state = AppState(settings: AppSettings(), cards: []);
+    final store = Store(Directory.systemTemp.createTempSync('lw-panel5').path);
+
+    await tester.pumpWidget(FluentApp(
+      home: ControlPanel(
+        state: state,
+        store: store,
+        registry:
+            PluginRegistry(Directory.systemTemp.createTempSync('lw-reg').path),
+        initialTab: 0,
+        embedded: false,
+        onClose: () {},
+        onChanged: () {},
+        onAdd: (_) {},
+        onRemove: (_) {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    NavigationPane paneNow() =>
+        tester.widget<NavigationView>(find.byType(NavigationView)).pane!;
+
+    expect(paneNow().displayMode, PaneDisplayMode.expanded,
+        reason: '默认是展开的');
+
+    final view = tester.widget<NavigationView>(find.byType(NavigationView));
+    expect(view.onDisplayModeChanged, isNotNull,
+        reason: '不接这个回调的话，收起按钮报出来的新模式没人接，等于白按');
+    // 直接走 NavigationView 对外的回调，等价于用户点那个按钮
+    view.onDisplayModeChanged!(PaneDisplayMode.compact);
+    await tester.pump();
+
+    expect(paneNow().displayMode, PaneDisplayMode.compact,
+        reason: '收起之后必须留在收起状态，不能被写死的常量按回展开');
+
+    // 收起动画途中，fluent_ui 自己那个 Row 会瞬时溢出 4px
+    // （pane_items.dart:305，外面就套着 ClipRect，显然是预料之中的过渡产物）。
+    // 这里放掉动画、把这个已知的瞬时异常取走，但紧接着要证明**稳态是干净的**
+    // ——否则就不是过渡产物，而是真的布局塌了。
+    await tester.pumpAndSettle();
+    tester.takeException();
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.takeException(), isNull,
+        reason: '收起稳定之后不该再有溢出，否则是真的布局问题而不是过渡');
+
+    view.onDisplayModeChanged!(PaneDisplayMode.expanded);
+    await tester.pumpAndSettle();
+    tester.takeException(); // 展开动画同理
+    expect(paneNow().displayMode, PaneDisplayMode.expanded,
+        reason: '再点一次要能展开回来');
+
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.takeException(), isNull, reason: '展开稳态同样要干净');
+
+    await tester.pump(const Duration(milliseconds: 400));
+  });
+
+  testWidgets('窗口四周有缩放手柄，按下时把正确的命中码发给 native',
+      (tester) async {
+    // 这窗口没有系统缩放边框（无边框 + Flutter 子窗口吃掉鼠标消息，
+    // WM_NCHITTEST 用不了），缩放全靠这圈手柄喊 native。
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('vectra/native'),
+            (call) async {
+      calls.add(call);
+      return null;
+    });
+
+    tester.view.physicalSize = const Size(900, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final state = AppState(settings: AppSettings(), cards: []);
+    final store = Store(Directory.systemTemp.createTempSync('lw-panel6').path);
+
+    await tester.pumpWidget(FluentApp(
+      home: ControlPanel(
+        state: state,
+        store: store,
+        registry:
+            PluginRegistry(Directory.systemTemp.createTempSync('lw-reg').path),
+        initialTab: 0,
+        // 真实设置窗口就是这个模式（见 panel_app.dart）；
+        // 默认的 embedded=true 是旧的内嵌对话框，那条路径没有独立窗口，
+        // 自然也没有缩放手柄
+        embedded: false,
+        onClose: () {},
+        onChanged: () {},
+        onAdd: (_) {},
+        onRemove: (_) {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    Future<void> pressAt(Offset p) async {
+      final g = await tester.startGesture(p, kind: PointerDeviceKind.mouse,
+          buttons: kPrimaryMouseButton);
+      await tester.pump();
+      await g.up();
+      await tester.pump();
+    }
+
+    int? lastEdge() {
+      final r = calls.where((c) => c.method == 'panelResize');
+      return r.isEmpty ? null : r.last.arguments as int;
+    }
+
+    // 命中码取自 winuser.h：左 10 右 11 上 12 左上 13 右上 14
+    // 下 15 左下 16 右下 17
+    await pressAt(const Offset(2, 320));
+    expect(lastEdge(), 10, reason: '左边缘 HTLEFT');
+
+    await pressAt(const Offset(898, 320));
+    expect(lastEdge(), 11, reason: '右边缘 HTRIGHT');
+
+    await pressAt(const Offset(450, 2));
+    expect(lastEdge(), 12, reason: '上边缘 HTTOP');
+
+    await pressAt(const Offset(450, 638));
+    expect(lastEdge(), 15, reason: '下边缘 HTBOTTOM');
+
+    // 四个角必须压在边之上，否则拐角只能单向缩放
+    await pressAt(const Offset(3, 3));
+    expect(lastEdge(), 13, reason: '左上角 HTTOPLEFT');
+
+    await pressAt(const Offset(897, 3));
+    expect(lastEdge(), 14, reason: '右上角 HTTOPRIGHT');
+
+    await pressAt(const Offset(3, 637));
+    expect(lastEdge(), 16, reason: '左下角 HTBOTTOMLEFT');
+
+    await pressAt(const Offset(897, 637));
+    expect(lastEdge(), 17, reason: '右下角 HTBOTTOMRIGHT');
 
     await tester.pump(const Duration(milliseconds: 400));
   });
