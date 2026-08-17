@@ -247,6 +247,87 @@ void main() {
     });
   });
 
+  group('毛玻璃', () {
+    // 这一组是用户实测报的第二个同类事故：深壁纸 + 毛玻璃 + 系统浅色，
+    // 卡片明明是深的，字却按"主题是浅色"画成黑色，糊在一起看不见。
+    // 云母那条分支上次修过了，毛玻璃这条当时漏了——因为压根没有测试覆盖。
+
+    testWidgets('深壁纸：无论主题怎么设，都必须给浅色字', (tester) async {
+      // theme 三种取值全试一遍。卡片是明是暗由壁纸和材质决定，
+      // 跟用户希望界面是明是暗没有因果关系。
+      for (final theme in ['auto', 'light', 'dark']) {
+        for (final sys in [Brightness.light, Brightness.dark]) {
+          systemBrightness.value = sys;
+          final fg = await foregroundOf(tester,
+              material: 'acrylic',
+              cardColor: 0xFF1C2332,
+              theme: theme,
+              wallpaperBrightness: 0.08);
+          expect(isLight(fg), isTrue,
+              reason: 'theme=$theme 系统=$sys 时深壁纸上的毛玻璃给了深色字，'
+                  '字会直接糊进背景里看不见');
+        }
+      }
+    });
+
+    testWidgets('亮壁纸：无论主题怎么设，都必须给深色字', (tester) async {
+      for (final theme in ['auto', 'light', 'dark']) {
+        for (final sys in [Brightness.light, Brightness.dark]) {
+          systemBrightness.value = sys;
+          final fg = await foregroundOf(tester,
+              material: 'acrylic',
+              cardColor: 0xFFF2F3F5,
+              theme: theme,
+              wallpaperBrightness: 0.95);
+          expect(isLight(fg), isFalse,
+              reason: 'theme=$theme 系统=$sys 时亮壁纸上的毛玻璃给了浅色字');
+        }
+      }
+    });
+
+    testWidgets('壁纸从全黑扫到全白，文字始终站在实际卡面正确的一侧',
+        (tester) async {
+      for (final wall in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]) {
+        await expectRightSide(tester,
+            material: 'acrylic',
+            cardColor: 0xFF1C2332,
+            wallpaperBrightness: wall);
+      }
+    });
+
+    testWidgets('染色越浓，卡片底色的话语权越大', (tester) async {
+      // glassTint 是那层染色的不透明度，也就是混合权重：
+      // 调到 1 时壁纸完全不参与，白底就该判成浅底给深字，哪怕壁纸全黑。
+      Wallpaper.brightness.value = 0.0;
+      final settings = AppSettings()
+        ..material = 'acrylic'
+        ..cardColor = 0xFFFFFFFF
+        ..glassTint = 1.0;
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: CardView(
+            card: WidgetCard(
+                id: 'c1', pluginId: 'clock', x: 0, y: 0, size: '2x2', z: 1),
+            settings: settings,
+            width: 200,
+            height: 200,
+            editing: false,
+            child: const SizedBox(key: childKey),
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      final style = tester.widget<DefaultTextStyle>(find
+          .ancestor(
+              of: find.byKey(childKey), matching: find.byType(DefaultTextStyle))
+          .first);
+      expect(isLight(style.style.color!), isFalse,
+          reason: '染色拉满时壁纸透不上来，白色染色就是最终卡面，该给深色字');
+    });
+  });
+
   group('不透明', () {
     testWidgets('白底给深色字', (tester) async {
       final fg = await foregroundOf(tester,

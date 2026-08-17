@@ -9,7 +9,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-import '../core/theme.dart';
 import '../model/card.dart';
 import '../model/settings.dart';
 import 'wallpaper.dart';
@@ -32,11 +31,21 @@ class CardView extends StatelessWidget {
   final bool editing;
   final Widget child;
 
-  /// 底色是否偏亮。决定文字/描边用深色还是浅色，保证可读性：
-  ///   - 不透明卡：看卡底色自己（用户选的），它就是最终贴在屏幕上的颜色
-  ///   - 云母卡：按"色板 + 壁纸"的**实际合成结果**判断，见下面的注释
-  ///   - 亚克力卡：染色越浓卡底色越主导，越淡壁纸越主导；auto 按混合后的
-  ///     明暗走，用户显式选了浅色/深色主题则以主题为准（强制翻转）
+  /// 底色是否偏亮。决定文字/描边用深色还是浅色，保证可读性。
+  ///
+  /// **一律看卡片实际贴在屏幕上的颜色，不看主题设置。** 三种材质各自的算法
+  /// 不同，但结论都来自"最终合成结果"：
+  ///   - 不透明卡：卡底色自己就是最终颜色，壁纸完全被盖住
+  ///   - 云母卡：色板 @ alpha 叠在壁纸上的合成结果
+  ///   - 亚克力/毛玻璃卡：染色越浓卡底色越主导，越淡壁纸越主导
+  ///
+  /// 为什么主题（浅色/深色/跟随系统）不参与：主题描述的是"用户希望界面
+  /// 是明是暗"，而这里要回答的是"这张卡片现在到底是明是暗"——后者由壁纸和
+  /// 材质决定，跟前者没有因果关系。让主题强制翻转的后果是自相矛盾：
+  /// 深壁纸 + 毛玻璃 + 系统浅色，卡片明明是深的，字却按浅底规则画成黑色，
+  /// 直接糊在一起看不见（云母那条分支上次已经修过，毛玻璃这条漏了）。
+  ///
+  /// 主题设置仍然管着设置窗口和 AI 侧边栏的明暗，只是不再插手卡片。
   bool get _brightBackdrop {
     if (settings.material == 'opaque') {
       return Color(settings.cardColor).computeLuminance() > 0.5;
@@ -45,21 +54,16 @@ class CardView extends StatelessWidget {
       // 云母必须看合成之后的颜色，不能直接看 cardColor —— 这正是
       // "白底 + 云母 = 永远黑字看不清" 的根因：底色只决定色板的色相和明暗
       // 档位，真正贴在屏幕上的是"色板 @ alpha 叠在壁纸上"的结果。
-      //
-      // 也不受 theme 影响：云母的明暗已经由用户选的底色定死了，再让主题
-      // 强制翻转就会又回到"卡片是深的、字却是黑的"那种自相矛盾的状态
-      // （用户实测切深浅色救不回来，就是因为这条分支压根没走到主题判断）。
       final a = _micaAlpha;
       final composite = _micaBase.computeLuminance() * a +
           Wallpaper.brightness.value * (1 - a);
       return composite > 0.5;
     }
+    // 亚克力/毛玻璃：染色是薄薄一层，剩下的全是模糊壁纸透上来的。
+    // glassTint 就是这层染色的不透明度，正好当混合权重用。
     final tint = settings.glassTint.clamp(0.0, 1.0);
     final cardL = Color(settings.cardColor).computeLuminance();
     final blended = cardL * tint + Wallpaper.brightness.value * (1 - tint);
-    final eff = effectiveBrightness(settings);
-    if (eff == Brightness.light) return true;
-    if (eff == Brightness.dark) return false;
     return blended > 0.5;
   }
 
@@ -139,10 +143,12 @@ class CardView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 壁纸亮度或系统主题一变，卡片文字/描边颜色要跟着翻转。
-    // 只在这两个 notifier 变化时重建，平时不额外开销。
+    // 壁纸亮度一变，卡片文字/描边颜色要跟着翻转。
+    //
+    // 这里**不再**监听 systemBrightness：卡片明暗只由壁纸和材质决定，
+    // 系统深浅色切换不该让卡片重建（见 _brightBackdrop 的说明）。
     return AnimatedBuilder(
-      animation: Listenable.merge([Wallpaper.brightness, systemBrightness]),
+      animation: Wallpaper.brightness,
       builder: (context, _) => SizedBox(
         width: width,
         height: height,
