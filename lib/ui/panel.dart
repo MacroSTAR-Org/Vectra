@@ -17,7 +17,6 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:flutter/gestures.dart' show PointerDeviceKind, kPrimaryButton;
 import 'package:flutter/material.dart' show Icons;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -33,6 +32,7 @@ import '../plugin/manifest.dart';
 import '../plugin/registry.dart';
 import '../store/store.dart';
 import 'panel_app.dart' show panelThemeRevision;
+import 'window_chrome.dart';
 import 'panel_preview.dart';
 import 'wallpaper.dart';
 
@@ -293,7 +293,7 @@ class _ControlPanelState extends State<ControlPanel> {
       // 允许的最小尺寸，手柄就跟着缩没了（surface.dart 里踩过同样的坑）
       return Stack(fit: StackFit.expand, children: [
         Positioned.fill(child: body),
-        ..._resizeHandles(),
+        ...resizeHandles(NativeWindow.panel),
         // 描边。窗口是无边框的，浅色主题下面板底色和浅色桌面/浅色应用背景
         // 挨在一起时几乎分不出边界，一圈淡黑色才能把窗口"框"出来。
         //
@@ -450,19 +450,19 @@ class _ControlPanelState extends State<ControlPanel> {
             ]),
           ),
         ),
-        _WinButton(
+        WindowButton(
           icon: Icons.minimize_rounded,
           tooltip: '最小化',
           light: _c.light,
-          onTap: () => NativeBridge.panelMinimize(),
+          onTap: () => NativeWindow.panel.minimize(),
         ),
-        _WinButton(
+        WindowButton(
           icon: Icons.crop_square_rounded,
           tooltip: '最大化 / 还原',
           light: _c.light,
-          onTap: () => NativeBridge.panelToggleMaximize(),
+          onTap: () => NativeWindow.panel.toggleMaximize(),
         ),
-        _WinButton(
+        WindowButton(
           icon: Icons.close_rounded,
           tooltip: '关闭',
           light: _c.light,
@@ -474,82 +474,8 @@ class _ControlPanelState extends State<ControlPanel> {
     );
   }
 
-  /// 窗口四周的缩放手柄。
-  ///
-  /// 这窗口是无边框的，没有系统缩放边缘可用（缘由见 panel_window.cpp 里
-  /// ResizeFrom 的注释），只能自己在边上铺一圈透明区域，按下时喊 native
-  /// 交给系统去拖。
-  ///
-  /// 边宽 6px、角落 12x12：太窄了不好抓，太宽会盖住边上的控件。角落必须
-  /// 压在边之后（Stack 里靠后者在上），否则拐角处只能单向缩放。
-  List<Widget> _resizeHandles() {
-    const t = 6.0; // 边的厚度
-    const c = 12.0; // 角的边长
-
-    Widget h({
-      double? left,
-      double? top,
-      double? right,
-      double? bottom,
-      double? width,
-      double? height,
-      required int edge,
-      required MouseCursor cursor,
-    }) {
-      return Positioned(
-        left: left,
-        top: top,
-        right: right,
-        bottom: bottom,
-        width: width,
-        height: height,
-        child: MouseRegion(
-          cursor: cursor,
-          child: Listener(
-            // behavior 必须是 opaque：手柄是透明的，不这样按不到
-            behavior: HitTestBehavior.opaque,
-            onPointerDown: (e) {
-              if (e.kind != PointerDeviceKind.mouse) return;
-              if ((e.buttons & kPrimaryButton) == 0) return;
-              Log.d('panel', '缩放手柄按下 edge=$edge');
-              NativeBridge.panelResize(edge);
-            },
-          ),
-        ),
-      );
-    }
-
-    return [
-      // 四条边
-      h(left: c, right: c, top: 0, height: t,
-          edge: _PanelEdge.top, cursor: SystemMouseCursors.resizeUpDown),
-      h(left: c, right: c, bottom: 0, height: t,
-          edge: _PanelEdge.bottom, cursor: SystemMouseCursors.resizeUpDown),
-      h(top: c, bottom: c, left: 0, width: t,
-          edge: _PanelEdge.left, cursor: SystemMouseCursors.resizeLeftRight),
-      h(top: c, bottom: c, right: 0, width: t,
-          edge: _PanelEdge.right, cursor: SystemMouseCursors.resizeLeftRight),
-      // 四个角压在边上面
-      h(left: 0, top: 0, width: c, height: c,
-          edge: _PanelEdge.topLeft,
-          cursor: SystemMouseCursors.resizeUpLeftDownRight),
-      h(right: 0, top: 0, width: c, height: c,
-          edge: _PanelEdge.topRight,
-          cursor: SystemMouseCursors.resizeUpRightDownLeft),
-      h(left: 0, bottom: 0, width: c, height: c,
-          edge: _PanelEdge.bottomLeft,
-          cursor: SystemMouseCursors.resizeUpRightDownLeft),
-      h(right: 0, bottom: 0, width: c, height: c,
-          edge: _PanelEdge.bottomRight,
-          cursor: SystemMouseCursors.resizeUpLeftDownRight),
-    ];
-  }
-
-  void _onTitleDrag(PointerDownEvent e) {
-    if (e.kind == PointerDeviceKind.mouse && (e.buttons & kPrimaryButton) != 0) {
-      NativeBridge.panelDragMove();
-    }
-  }
+  void _onTitleDrag(PointerDownEvent e) =>
+      beginWindowDrag(NativeWindow.panel, e);
 
   // ---------------- 组件库 ----------------
 
@@ -2044,73 +1970,6 @@ class _LwTextBoxState extends State<_LwTextBox> {
   }
 }
 
-/// 无边框窗口标题栏上的窗口按钮：最小化 / 最大化 / 关闭。
-class _WinButton extends StatefulWidget {
-  const _WinButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-    required this.light,
-    this.danger = false,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  /// 深浅色：决定未选中时的图标/悬停底色
-  final bool light;
-
-  /// 关闭按钮：悬停用红色强调
-  final bool danger;
-
-  @override
-  State<_WinButton> createState() => _WinButtonState();
-}
-
-class _WinButtonState extends State<_WinButton> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: widget.tooltip,
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: _hover
-                  ? (widget.danger
-                      ? Color(0x33FF6B6B)
-                      : widget.light
-                          ? Color(0x1F000000)
-                          : Color(0x1FFFFFFF))
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              widget.icon,
-              size: 16,
-              color: widget.danger
-                  ? (widget.light ? Color(0xFFB3261E) : Colors.white)
-                  : widget.light
-                      ? Color(0x9916181C)
-                      : Color(0x99FFFFFF),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ---------------- 插件 number 设置项的取值 ----------------
 
 /// 把滑块值对齐到插件声明的 step 上。
@@ -2167,19 +2026,4 @@ List<String> describeSettingsDiff(
     if (old != value) changed.add('$key: $old -> $value');
   });
   return changed;
-}
-
-/// Win32 的窗口命中码，缩放时原样传给 native。
-///
-/// 数值来自 winuser.h，不能改：native 侧直接把它塞进
-/// WM_NCLBUTTONDOWN 的 wParam 交给系统。
-class _PanelEdge {
-  static const int left = 10; // HTLEFT
-  static const int right = 11; // HTRIGHT
-  static const int top = 12; // HTTOP
-  static const int topLeft = 13; // HTTOPLEFT
-  static const int topRight = 14; // HTTOPRIGHT
-  static const int bottom = 15; // HTBOTTOM
-  static const int bottomLeft = 16; // HTBOTTOMLEFT
-  static const int bottomRight = 17; // HTBOTTOMRIGHT
 }

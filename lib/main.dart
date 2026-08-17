@@ -18,6 +18,7 @@ import 'plugin/registry.dart';
 import 'sidebar_main.dart' as sidebar;
 import 'store/store.dart';
 import 'ui/app_root.dart';
+import 'ui/market_app.dart';
 import 'ui/panel_app.dart';
 
 /// AI 侧边栏那个引擎的入口。
@@ -91,6 +92,7 @@ Future<void> main(List<String> args) async {
     store: store,
     registry: registry,
     openPanel: args.contains('--panel'),
+    openMarket: args.contains('--market'),
     openAi: args.contains('--ai'),
   ));
 }
@@ -106,6 +108,7 @@ class _MultiViewRoot extends StatefulWidget {
     required this.store,
     required this.registry,
     required this.openPanel,
+    required this.openMarket,
     required this.openAi,
   });
 
@@ -116,6 +119,9 @@ class _MultiViewRoot extends StatefulWidget {
   /// --panel：启动即弹出设置窗口，供不合成键鼠的验证使用
   final bool openPanel;
 
+  /// --market：启动即弹出插件市场窗口，同样是为了验证
+  final bool openMarket;
+
   /// --ai：启动即展开 AI 侧边栏
   final bool openAi;
 
@@ -125,6 +131,7 @@ class _MultiViewRoot extends StatefulWidget {
 
 class _MultiViewRootState extends State<_MultiViewRoot> {
   ui.FlutterView? _panelView;
+  ui.FlutterView? _marketView;
 
   /// 设置窗口那个视图要直接调 AppRoot 的方法（添加卡片要读桌面视图的
   /// 尺寸来找空位）。同一个 isolate，所以这是真正的对象引用。
@@ -133,33 +140,47 @@ class _MultiViewRootState extends State<_MultiViewRoot> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _createPanelView());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _createWindows());
   }
 
-  Future<void> _createPanelView() async {
+  Future<void> _createWindows() async {
+    // 设置窗口先建：它是常用入口，早一点就绪早一点能弹出来。
+    // 市场窗口紧随其后——两个都只是"建好视图挂着"，不显示，不占屏幕。
+    final panel = await _createView(NativeWindow.panel, '设置窗口');
+    if (mounted && panel != null) setState(() => _panelView = panel);
+    if (panel != null && widget.openPanel) NativeWindow.panel.show();
+
+    final market = await _createView(NativeWindow.market, '插件市场窗口');
+    if (mounted && market != null) setState(() => _marketView = market);
+    if (market != null && widget.openMarket) NativeWindow.market.show();
+  }
+
+  /// 让 native 建一个次级窗口 + 视图，等它出现在 PlatformDispatcher 里。
+  ///
+  /// 建不出来只影响这一个窗口：磁贴照常跑，别的窗口也照常建。
+  Future<ui.FlutterView?> _createView(NativeWindow window, String label) async {
     final engineId = ui.PlatformDispatcher.instance.engineId;
     if (engineId == null) {
-      Log.e('panel', '拿不到 engineId，设置窗口起不来');
-      return;
+      Log.e(window.key, '拿不到 engineId，$label 起不来');
+      return null;
     }
-    final viewId = await NativeBridge.createPanelView(engineId);
+    final viewId = await window.createView(engineId);
     if (viewId < 0) {
-      Log.e('panel', 'native 建视图失败');
-      return;
+      Log.e(window.key, 'native 建视图失败（$label）');
+      return null;
     }
     // 视图注册进 PlatformDispatcher 是异步的，等它出现
     for (var i = 0; i < 40; i++) {
       for (final v in ui.PlatformDispatcher.instance.views) {
         if (v.viewId == viewId) {
-          Log.i('panel', '设置窗口视图就绪 viewId=$viewId');
-          if (mounted) setState(() => _panelView = v);
-          if (widget.openPanel) NativeBridge.showPanelWindow();
-          return;
+          Log.i(window.key, '$label 视图就绪 viewId=$viewId');
+          return v;
         }
       }
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
-    Log.e('panel', '等了 2 秒，viewId=$viewId 仍未出现在 views 里');
+    Log.e(window.key, '等了 2 秒，viewId=$viewId 仍未出现在 views 里（$label）');
+    return null;
   }
 
   @override
@@ -187,6 +208,16 @@ class _MultiViewRootState extends State<_MultiViewRoot> {
           view: _panelView!,
           child: PanelApp(
             appKey: _appKey,
+            state: widget.state,
+            store: widget.store,
+            registry: widget.registry,
+          ),
+        ),
+      if (_marketView != null)
+        View(
+          key: ValueKey('view:${_marketView!.viewId}'),
+          view: _marketView!,
+          child: MarketApp(
             state: widget.state,
             store: widget.store,
             registry: widget.registry,

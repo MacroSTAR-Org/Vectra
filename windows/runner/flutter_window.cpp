@@ -16,7 +16,7 @@
 #include "accent.h"
 #include "desktop_capture.h"
 #include "hit_region.h"
-#include "panel_window.h"
+#include "view_window.h"
 #include "sidebar_window.h"
 #include "smtc.h"
 #include "splash_window.h"
@@ -376,12 +376,17 @@ void HandleMethodCall(
     return;
   }
 
-  if (call.method_name() == "createPanelView") {
+  // ---- 次级窗口（设置 / 插件市场）----
+  //
+  // 这几条都带一个 key 参数指明操作哪个窗口。窗口的实现是共用的
+  // （见 view_window.h），这里只负责把 key 换成窗口对象。
+  if (call.method_name() == "createView") {
     // Dart 把自己的 engineId 报上来，这边据此在**同一个引擎**上再开一个视图。
     // 之所以要 Dart 报：C++ 拿不到 flutter::FlutterEngine 内部那个
     // FlutterDesktopEngineRef（私有成员，只有 FlutterViewController 是友元）。
     const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
     int64_t engine_id = 0;
+    std::string key;
     if (args) {
       auto it = args->find(flutter::EncodableValue("engineId"));
       if (it != args->end()) {
@@ -391,41 +396,42 @@ void HandleMethodCall(
           engine_id = *v32;
         }
       }
+      auto k = args->find(flutter::EncodableValue("key"));
+      if (k != args->end()) {
+        if (const auto* s = std::get_if<std::string>(&k->second)) key = *s;
+      }
     }
-    if (engine_id == 0) {
+    ViewWindow* win = ViewWindow::ForKey(key);
+    if (engine_id == 0 || win == nullptr) {
       result->Success(flutter::EncodableValue(static_cast<int64_t>(-1)));
       return;
     }
-    static PanelWindow panel;
-    result->Success(flutter::EncodableValue(panel.Create(engine_id)));
+    result->Success(flutter::EncodableValue(win->Create(engine_id)));
     return;
   }
 
-  if (call.method_name() == "showPanelWindow") {
-    if (PanelWindow* p = PanelWindow::instance()) p->Show();
-    result->Success();
-    return;
-  }
-
-  if (call.method_name() == "hidePanelWindow") {
-    if (PanelWindow* p = PanelWindow::instance()) p->Hide();
-    result->Success();
-    return;
-  }
-
-  // 自绘标题栏：Flutter 侧把指针事件发过来，native 这边操作窗口
-  if (call.method_name() == "panelDragMove") {
-    if (PanelWindow* p = PanelWindow::instance()) p->DragMove();
-    result->Success();
-    return;
-  }
-  if (call.method_name() == "panelMinimize") {
-    if (PanelWindow* p = PanelWindow::instance()) p->Minimize();
-    result->Success();
-    return;
-  }
-  if (call.method_name() == "panelToggleMaximize") {
-    if (PanelWindow* p = PanelWindow::instance()) p->ToggleMaximize();
+  // 下面几条的参数就是窗口 key 本身
+  if (call.method_name() == "windowShow" ||
+      call.method_name() == "windowHide" ||
+      call.method_name() == "windowDragMove" ||
+      call.method_name() == "windowMinimize" ||
+      call.method_name() == "windowToggleMaximize") {
+    const auto* key = std::get_if<std::string>(call.arguments());
+    ViewWindow* win = key ? ViewWindow::ForKey(*key) : nullptr;
+    if (win) {
+      const std::string& m = call.method_name();
+      if (m == "windowShow") {
+        win->Show();
+      } else if (m == "windowHide") {
+        win->Hide();
+      } else if (m == "windowDragMove") {
+        win->DragMove();
+      } else if (m == "windowMinimize") {
+        win->Minimize();
+      } else {
+        win->ToggleMaximize();
+      }
+    }
     result->Success();
     return;
   }
@@ -464,13 +470,27 @@ void HandleMethodCall(
     result->Success();
     return;
   }
-  if (call.method_name() == "panelResize") {
-    const auto* edge = std::get_if<int32_t>(call.arguments());
-    if (!edge) {
-      result->Error("bad_args", "expected an int hit-test code");
+  if (call.method_name() == "windowResize") {
+    const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+    if (!args) {
+      result->Error("bad_args", "expected {key, edge}");
       return;
     }
-    if (PanelWindow* p = PanelWindow::instance()) p->ResizeFrom(*edge);
+    std::string key;
+    auto k = args->find(flutter::EncodableValue("key"));
+    if (k != args->end()) {
+      if (const auto* s = std::get_if<std::string>(&k->second)) key = *s;
+    }
+    int edge = 0;
+    auto e = args->find(flutter::EncodableValue("edge"));
+    if (e != args->end()) {
+      if (const auto* v = std::get_if<int32_t>(&e->second)) {
+        edge = *v;
+      } else if (const auto* v64 = std::get_if<int64_t>(&e->second)) {
+        edge = static_cast<int>(*v64);
+      }
+    }
+    if (ViewWindow* win = ViewWindow::ForKey(key)) win->ResizeFrom(edge);
     result->Success();
     return;
   }

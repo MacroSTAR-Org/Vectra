@@ -165,39 +165,6 @@ class NativeBridge {
           .invokeMethod<bool>('smtcControl', {'cmd': cmd, 'posMs': posMs}) ??
       false;
 
-  /// 在**同一个引擎**上再开一个视图，用作任务栏里的设置窗口。
-  ///
-  /// 要把 Dart 侧的 engineId 报给 native：C++ 拿不到
-  /// flutter::FlutterEngine 内部那个 FlutterDesktopEngineRef（私有成员）。
-  /// 返回视图 id，-1 表示失败。
-  static Future<int> createPanelView(int engineId) async =>
-      await _channel.invokeMethod<int>('createPanelView', {'engineId': engineId}) ??
-      -1;
-
-  static Future<void> showPanelWindow() =>
-      _channel.invokeMethod<void>('showPanelWindow');
-
-  static Future<void> hidePanelWindow() =>
-      _channel.invokeMethod<void>('hidePanelWindow');
-
-  /// 无边框设置窗口的标题栏操作：拖动 / 最小化 / 最大化切换。
-  static Future<void> panelDragMove() =>
-      _channel.invokeMethod<void>('panelDragMove');
-
-  static Future<void> panelMinimize() =>
-      _channel.invokeMethod<void>('panelMinimize');
-
-  static Future<void> panelToggleMaximize() =>
-      _channel.invokeMethod<void>('panelToggleMaximize');
-
-  /// 从窗口某条边/某个角开始缩放。
-  ///
-  /// 传的是 Win32 的命中码（HTLEFT=10 那一套，见 PanelEdge）。窗口没有系统
-  /// 缩放边框，也没法靠 WM_NCHITTEST——Flutter 子窗口把鼠标消息全吃了，
-  /// 所以由 Flutter 侧的边缘手柄按下时喊一声，native 再交给系统去拖。
-  static Future<void> panelResize(int edge) =>
-      _channel.invokeMethod<void>('panelResize', edge);
-
   /// 启动幕布的加载进度。ready/total 是"已就绪的卡片数 / 总卡片数"。
   static Future<void> splashProgress(int ready, int total) =>
       _channel.invokeMethod<void>(
@@ -234,4 +201,54 @@ class NativeBridge {
     final m = await _channel.invokeMapMethod<String, int>('getWindowRect');
     return (x: m?['x'] ?? 0, y: m?['y'] ?? 0, w: m?['w'] ?? 0, h: m?['h'] ?? 0);
   }
+}
+
+/// 任务栏里那些次级窗口（设置、插件市场）的遥控器。
+///
+/// 每个窗口在 native 侧是同一个类的不同实例（见 view_window.h），靠这里的
+/// [key] 区分。做成实例而不是一堆 `showXxxWindow` 静态方法：加一个窗口时
+/// native 和 Dart 都不用再抄一遍七个方法，只要多一个常量。
+class NativeWindow {
+  const NativeWindow(this.key);
+
+  /// 与 native 侧 ViewWindow::ForKey 认的字符串一一对应
+  final String key;
+
+  /// 设置窗口
+  static const panel = NativeWindow('panel');
+
+  /// 插件市场
+  static const market = NativeWindow('market');
+
+  static const MethodChannel _channel = MethodChannel('vectra/native');
+
+  /// 在**同一个引擎**上再开一个视图，挂到这个窗口上。
+  ///
+  /// 要把 Dart 侧的 engineId 报给 native：C++ 拿不到
+  /// flutter::FlutterEngine 内部那个 FlutterDesktopEngineRef（私有成员）。
+  /// 返回视图 id，-1 表示失败。
+  Future<int> createView(int engineId) async =>
+      await _channel
+          .invokeMethod<int>('createView', {'key': key, 'engineId': engineId}) ??
+      -1;
+
+  Future<void> show() => _channel.invokeMethod<void>('windowShow', key);
+
+  Future<void> hide() => _channel.invokeMethod<void>('windowHide', key);
+
+  /// 无边框窗口的标题栏操作：拖动 / 最小化 / 最大化切换。
+  Future<void> dragMove() => _channel.invokeMethod<void>('windowDragMove', key);
+
+  Future<void> minimize() => _channel.invokeMethod<void>('windowMinimize', key);
+
+  Future<void> toggleMaximize() =>
+      _channel.invokeMethod<void>('windowToggleMaximize', key);
+
+  /// 从窗口某条边/某个角开始缩放。
+  ///
+  /// 传的是 Win32 的命中码（HTLEFT=10 那一套，见 WindowEdge）。窗口没有系统
+  /// 缩放边框，也没法靠 WM_NCHITTEST——Flutter 子窗口把鼠标消息全吃了，
+  /// 所以由 Flutter 侧的边缘手柄按下时喊一声，native 再交给系统去拖。
+  Future<void> resizeFrom(int edge) =>
+      _channel.invokeMethod<void>('windowResize', {'key': key, 'edge': edge});
 }

@@ -403,12 +403,12 @@ class AppRootState extends State<AppRoot> with TrayListener {
     panelTabRequest.value = tab ?? (cardId != null ? 1 : 0);
     Log.i('app',
         '打开设置窗口${cardId == null ? "" : "（定位卡片 $cardId）"}');
-    NativeBridge.showPanelWindow();
+    NativeWindow.panel.show();
   }
 
   void hidePanelWindow() {
     Log.i('app', '关闭设置窗口');
-    NativeBridge.hidePanelWindow();
+    NativeWindow.panel.hide();
     // 设置可能改了，让卡片按新参数重建
     setState(() => _revision++);
   }

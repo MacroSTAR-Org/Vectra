@@ -309,9 +309,14 @@ void main() {
       await tester.pump();
     }
 
+    // 通道换成了带窗口 key 的通用协议（一套窗口实现给设置和市场共用），
+    // 命中码本身没变——它来自 winuser.h，改了 native 那边就要出怪事
     int? lastEdge() {
-      final r = calls.where((c) => c.method == 'panelResize');
-      return r.isEmpty ? null : r.last.arguments as int;
+      final r = calls.where((c) => c.method == 'windowResize');
+      if (r.isEmpty) return null;
+      final args = (r.last.arguments as Map).cast<String, Object?>();
+      expect(args['key'], 'panel', reason: '缩放的必须是设置窗口那一个');
+      return args['edge'] as int?;
     }
 
     // 命中码取自 winuser.h：左 10 右 11 上 12 左上 13 右上 14

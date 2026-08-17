@@ -1,31 +1,22 @@
-#include "panel_window.h"
+#include "view_window.h"
 
 #include <dwmapi.h>
 
-#include <cstdio>
+#include <map>
+#include <utility>
 
+#include "flutter_window.h"
 #include "flutter_windows.h"
 #include "resource.h"
 
 namespace {
-
-PanelWindow* g_instance = nullptr;
-
-constexpr const wchar_t kClassName[] = L"VectraPanelWindow";
-constexpr const wchar_t kTitle[] = L"Vectra 设置";
-
-// 逻辑像素；实际创建时按窗口所在显示器的 DPI 缩放
-constexpr int kWidth = 900;
-constexpr int kHeight = 640;
-constexpr int kMinWidth = 720;
-constexpr int kMinHeight = 520;
 
 // 无边框窗口四个角的圆角半径（逻辑像素）。Win11 走 DWM 圆角，Win10 用区域裁剪。
 constexpr int kCornerRadiusLogical = 12;
 
 // ---- 两个"已导出但没写进公开头文件"的接口 ----
 //
-// 见 panel_window.h 顶部的说明。声明抄自引擎源码里的
+// 见 view_window.h 顶部的说明。声明抄自引擎源码里的
 // flutter_windows_internal.h，符号在 flutter_windows.dll.lib 中。
 extern "C" {
 
@@ -69,35 +60,59 @@ void ApplyRoundedRegion(HWND hwnd, int w, int h, bool apply, BOOL redraw) {
   SetWindowRgn(hwnd, rgn, redraw);
 }
 
-}  // namespace
-
-PanelWindow* PanelWindow::instance() { return g_instance; }
-
-PanelWindow::PanelWindow() { g_instance = this; }
-
-PanelWindow::~PanelWindow() {
-  if (g_instance == this) g_instance = nullptr;
+// native 这边的 printf 在发布版是丢的（GUI 子系统没有控制台），统一转给 Dart
+// 落进 userdata\logs\。引擎还没起来时只能丢——那阶段也没人会看。
+void Log(const std::string& message) {
+  if (FlutterWindow* w = FlutterWindow::instance()) w->Log(message);
 }
 
-LRESULT CALLBACK PanelWindow::WndProc(HWND hwnd, UINT msg, WPARAM w,
-                                      LPARAM l) {
+}  // namespace
+
+ViewWindow* ViewWindow::ForKey(const std::string& key) {
+  // 进程级注册表。窗口对象一旦建立就活到进程结束，和以前函数内 static 的
+  // 效果一样，只是现在可以有多个。
+  static std::map<std::string, ViewWindow*>* windows =
+      new std::map<std::string, ViewWindow*>();
+
+  auto it = windows->find(key);
+  if (it != windows->end()) return it->second;
+
+  ViewWindowSpec spec{};
+  if (key == "panel") {
+    spec = {L"VectraPanelWindow", L"Vectra 设置", 900, 640, 720, 520};
+  } else if (key == "market") {
+    // 市场要同时放下卡片网格和详情页，比设置窗口宽一点
+    spec = {L"VectraMarketWindow", L"Vectra 插件市场", 1000, 680, 760, 540};
+  } else {
+    return nullptr;
+  }
+
+  auto* w = new ViewWindow(key, spec);
+  (*windows)[key] = w;
+  return w;
+}
+
+ViewWindow::ViewWindow(std::string key, const ViewWindowSpec& spec)
+    : key_(std::move(key)), spec_(spec) {}
+
+LRESULT CALLBACK ViewWindow::WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
   if (msg == WM_NCCREATE) {
     auto* cs = reinterpret_cast<CREATESTRUCT*>(l);
     SetWindowLongPtr(hwnd, GWLP_USERDATA,
                      reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
-    auto* self = static_cast<PanelWindow*>(cs->lpCreateParams);
+    auto* self = static_cast<ViewWindow*>(cs->lpCreateParams);
     self->hwnd_ = hwnd;
     // 标题栏跟随系统深浅色。20 = DWMWA_USE_IMMERSIVE_DARK_MODE
     BOOL dark = TRUE;
     DwmSetWindowAttribute(hwnd, 20, &dark, sizeof(dark));
   }
-  auto* self = reinterpret_cast<PanelWindow*>(
-      GetWindowLongPtr(hwnd, GWLP_USERDATA));
+  auto* self =
+      reinterpret_cast<ViewWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
   if (self) return self->Handle(hwnd, msg, w, l);
   return DefWindowProc(hwnd, msg, w, l);
 }
 
-LRESULT PanelWindow::Handle(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
+LRESULT ViewWindow::Handle(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
   // 先给 Flutter 处理（DPI 变化、辅助功能等）
   if (controller_) {
     LRESULT result = 0;
@@ -151,8 +166,8 @@ LRESULT PanelWindow::Handle(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
       const LRESULT r = DefWindowProc(hwnd, msg, w, l);
       const UINT dpi = GetDpiForWindow(hwnd);
       auto* mmi = reinterpret_cast<MINMAXINFO*>(l);
-      mmi->ptMinTrackSize.x = Scaled(kMinWidth, dpi);
-      mmi->ptMinTrackSize.y = Scaled(kMinHeight, dpi);
+      mmi->ptMinTrackSize.x = Scaled(spec_.min_width, dpi);
+      mmi->ptMinTrackSize.y = Scaled(spec_.min_height, dpi);
 
       // 最大化范围必须自己算。
       //
@@ -193,21 +208,20 @@ LRESULT PanelWindow::Handle(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
   return DefWindowProc(hwnd, msg, w, l);
 }
 
-int64_t PanelWindow::Create(int64_t engine_id) {
+int64_t ViewWindow::Create(int64_t engine_id) {
   if (hwnd_) return view_id_;  // 只建一次
 
   FlutterDesktopEngineRef engine = FlutterDesktopEngineForId(engine_id);
   if (!engine) {
-    printf("[panel] 拿不到引擎 id=%lld\n", static_cast<long long>(engine_id));
-    fflush(stdout);
+    Log(key_ + " 窗口：拿不到引擎");
     return -1;
   }
 
   WNDCLASSEX wc{};
   wc.cbSize = sizeof(wc);
-  wc.lpfnWndProc = PanelWindow::WndProc;
+  wc.lpfnWndProc = ViewWindow::WndProc;
   wc.hInstance = GetModuleHandle(nullptr);
-  wc.lpszClassName = kClassName;
+  wc.lpszClassName = spec_.class_name;
   wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
   // 无边框窗口的缩放边缘（非客户区）露出来的底色用黑的，跟深色界面一致
   wc.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
@@ -223,8 +237,8 @@ int64_t PanelWindow::Create(int64_t engine_id) {
   // WM_NCHITTEST 失效（见 flutter_window.cpp 的实测记录），缩放边缘根本点不到
   // —— 只换来一圈丑边框，没有缩放收益，所以直接不缩放，砍掉它。
   const UINT dpi = GetDpiForSystem();
-  const int w = Scaled(kWidth, dpi);
-  const int h = Scaled(kHeight, dpi);
+  const int w = Scaled(spec_.width, dpi);
+  const int h = Scaled(spec_.height, dpi);
   RECT wa{};
   SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
   const int x = wa.left + ((wa.right - wa.left) - w) / 2;
@@ -234,12 +248,11 @@ int64_t PanelWindow::Create(int64_t engine_id) {
   // 涂东西。不加的话每次 WM_SIZE 父窗口都会把整个客户区先擦一遍（背景刷是
   // 黑的），子窗口随后才重画，拖动缩放时就是整窗一直黑闪。
   const DWORD ex_style = WS_EX_APPWINDOW;
-  hwnd_ = CreateWindowEx(ex_style, kClassName, kTitle,
-                         WS_POPUP | WS_CLIPCHILDREN,
-                         x, y, w, h, nullptr, nullptr, wc.hInstance, this);
+  hwnd_ = CreateWindowEx(ex_style, spec_.class_name, spec_.title,
+                         WS_POPUP | WS_CLIPCHILDREN, x, y, w, h, nullptr,
+                         nullptr, wc.hInstance, this);
   if (!hwnd_) {
-    printf("[panel] 建窗口失败 err=%lu\n", GetLastError());
-    fflush(stdout);
+    Log(key_ + " 窗口：建窗口失败 err=" + std::to_string(GetLastError()));
     return -1;
   }
 
@@ -257,14 +270,14 @@ int64_t PanelWindow::Create(int64_t engine_id) {
   const int cw = rc.right - rc.left;
   const int ch = rc.bottom - rc.top;
   ApplyRoundedRegion(hwnd_, cw, ch, !dwm_round_ok_ && !IsZoomed(hwnd_), TRUE);
+
   FlutterDesktopViewControllerProperties props{};
   props.width = cw;
   props.height = ch;
 
   auto* controller = FlutterDesktopEngineCreateViewController(engine, &props);
   if (!controller) {
-    printf("[panel] 建视图失败\n");
-    fflush(stdout);
+    Log(key_ + " 窗口：建视图失败");
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
     return -1;
@@ -280,19 +293,14 @@ int64_t PanelWindow::Create(int64_t engine_id) {
   MoveWindow(child_, 0, 0, props.width, props.height, TRUE);
   SetFocus(child_);
 
-  printf("[panel] 视图已建立 viewId=%lld 客户区=%dx%d\n",
-         static_cast<long long>(view_id_), props.width, props.height);
-  fflush(stdout);
+  Log(key_ + " 窗口：视图已建立 viewId=" + std::to_string(view_id_) +
+      " 客户区=" + std::to_string(props.width) + "x" +
+      std::to_string(props.height));
   return view_id_;
 }
 
-void PanelWindow::Show() {
+void ViewWindow::Show() {
   if (!hwnd_) return;
-  RECT before{};
-  GetWindowRect(hwnd_, &before);
-  printf("[panel] Show 之前 iconic=%d rect=%ld,%ld %ldx%ld\n", IsIconic(hwnd_),
-         before.left, before.top, before.right - before.left,
-         before.bottom - before.top);
   // 已最小化就还原，否则只是把它提到前面
   if (IsIconic(hwnd_)) {
     ShowWindow(hwnd_, SW_RESTORE);
@@ -301,19 +309,13 @@ void PanelWindow::Show() {
   }
   SetForegroundWindow(hwnd_);
   if (child_) SetFocus(child_);
-  RECT after{};
-  GetWindowRect(hwnd_, &after);
-  printf("[panel] Show 之后 iconic=%d visible=%d rect=%ld,%ld %ldx%ld\n",
-         IsIconic(hwnd_), IsWindowVisible(hwnd_), after.left, after.top,
-         after.right - after.left, after.bottom - after.top);
-  fflush(stdout);
 }
 
-void PanelWindow::Hide() {
+void ViewWindow::Hide() {
   if (hwnd_) ShowWindow(hwnd_, SW_HIDE);
 }
 
-bool PanelWindow::visible() const {
+bool ViewWindow::visible() const {
   return hwnd_ && IsWindowVisible(hwnd_);
 }
 
@@ -321,7 +323,7 @@ bool PanelWindow::visible() const {
 // 测试失效，见 flutter_window.cpp 里 setRegion 的实测记录），改用经典方案：
 // ReleaseCapture + 主动发一条 WM_NCLBUTTONDOWN(HTCAPTION)，系统随即接管鼠标、
 // 进入窗口移动循环。由 Flutter 标题栏的指针按下事件触发。
-void PanelWindow::DragMove() {
+void ViewWindow::DragMove() {
   if (!hwnd_) return;
   ReleaseCapture();
   SendMessage(hwnd_, WM_NCLBUTTONDOWN, HTCAPTION, 0);
@@ -337,12 +339,12 @@ void PanelWindow::DragMove() {
 // 把对应的命中码传过来，这里补一发 WM_NCLBUTTONDOWN，系统随即接管鼠标、
 // 进入标准的窗口缩放循环——最小尺寸、贴边、多显示器都由系统照常处理，
 // 我们不用自己算一行几何。
-void PanelWindow::ResizeFrom(int edge) {
+void ViewWindow::ResizeFrom(int edge) {
   if (!hwnd_) return;
   // 最大化状态下拖边缘缩放，系统行为是原地把窗口拉变形却仍标记为最大化，
   // 后面点"还原"会跳回一个和屏幕无关的尺寸。直接忽略更干净。
   if (IsZoomed(hwnd_)) return;
-  // 只认这九个合法命中码，别让上层随手传个数字进来就发出去
+  // 只认这八个合法命中码，别让上层随手传个数字进来就发出去
   switch (edge) {
     case HTLEFT:
     case HTRIGHT:
@@ -360,11 +362,11 @@ void PanelWindow::ResizeFrom(int edge) {
   SendMessage(hwnd_, WM_NCLBUTTONDOWN, static_cast<WPARAM>(edge), 0);
 }
 
-void PanelWindow::Minimize() {
+void ViewWindow::Minimize() {
   if (hwnd_) ShowWindow(hwnd_, SW_MINIMIZE);
 }
 
-void PanelWindow::ToggleMaximize() {
+void ViewWindow::ToggleMaximize() {
   if (!hwnd_) return;
   ShowWindow(hwnd_, IsZoomed(hwnd_) ? SW_RESTORE : SW_MAXIMIZE);
 }

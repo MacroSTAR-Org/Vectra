@@ -11,7 +11,7 @@ add_executable(${BINARY_NAME} WIN32
   "desktop_capture.cpp"
   "file_drop.cpp"
   "hit_region.cpp"
-  "panel_window.cpp"
+  "view_window.cpp"
   "sidebar_window.cpp"
   "smtc.cpp"
   "splash_window.cpp"
