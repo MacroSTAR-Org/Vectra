@@ -82,6 +82,16 @@ var lw = (function () {
 
   function __unmount() {
     if (impl && impl.unmount) { try { impl.unmount(ctx); } catch (e) {} }
+    // ctx.onCleanup 登记的收尾函数。定时器宿主会统一回收，但插件登记的**别的**
+    // 收尾动作（卸载前存一次状态之类）没有第二条路径能跑到。
+    // 倒序执行：后登记的通常依赖先登记的，先拆后装的那个才安全。
+    // 每个都单独 try：一个收尾函数抛异常不该让后面的都不执行。
+    if (ctx && ctx.__cleanups) {
+      for (var i = ctx.__cleanups.length - 1; i >= 0; i--) {
+        try { ctx.__cleanups[i](); } catch (e) {}
+      }
+      ctx.__cleanups = [];
+    }
     timers = {}; handlers = {}; pending = {};
   }
 

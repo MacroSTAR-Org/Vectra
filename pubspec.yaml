@@ -1,4 +1,4 @@
-﻿name: vectra
+name: vectra
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -11,7 +11,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # 鎵€浠ヤ笅闈㈣繖琛屽搴旂殑鐗堟湰鍙锋槸 0.1.1.120銆?
 #
 # 瑙勭煩锛氭瘡鍔犱竴涓?git 鑺傜偣锛屾渶鍚庝竴娈?+2锛?.1.1.120 -> 0.1.1.122 -> 0.1.1.124锛夈€?
-version: 0.1.1+144
+version: 0.1.2+122
 
 environment:
   sdk: ^3.12.2

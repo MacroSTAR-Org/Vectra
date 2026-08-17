@@ -75,6 +75,9 @@ node test\js\lrc_verify.js     # 歌词解析的纯函数验证
 
 ## 写一个插件
 
+> 完整的开发文档在 **[PLUGIN_DEV.md](PLUGIN_DEV.md)**：API 参考、节点类型速查、
+> 从零写一个插件的教程、常见错误对照表。下面是最短的一段引子。
+
 在 `userdata\plugins\` 下新建一个目录，放两个文件：
 
 ```
@@ -157,6 +160,9 @@ ctx.render({ t: 'tap', id: retry, child: { t: 'text', v: '重试' } });
 
 内置的 `clock` / `calendar` / `todo` / `weather` / `lyrics` 就是用这套 API 写的，
 在 `assets\plugins\` 下，可以直接抄。
+
+插件挂了不会连累别的卡片：出错的那张卡会显示原因和一个「重试」按钮，
+临时性的故障还会自动重试一次——详见 [PLUGIN_DEV.md 的调试一节](PLUGIN_DEV.md#调试)。
 
 ## 里面是怎么搭的
 
