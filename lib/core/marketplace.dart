@@ -25,11 +25,13 @@ import '../plugin/manifest.dart';
 import 'app_version.dart';
 import 'logger.dart';
 
-/// 市场服务器地址。
+/// 市场服务器地址（统曜 Unisphere 部署根）。
 ///
-/// 单独拎出来是为了以后能在设置里改（指向自建的测试服务器），
-/// 现在先当常量用。
-const String kMarketBaseUrl = 'https://market.vectra.macrostar.dev';
+/// 指向 Unisphere 的部署域名即可：客户端调用的 `/api/v1/catalog`、
+/// `/api/v1/plugins/{id}` 由 Unisphere 提供，**默认只返回 Vectra 分区**
+/// （Vectra 与 Lunar X 是两个不同产品，插件不通用）。
+/// 单独拎出来是为了以后能在设置里改（指向自建/测试服务器）。
+const String kMarketBaseUrl = 'https://unisphere.macrostar.dev';
 
 /// 市场里的一个插件条目。
 ///
