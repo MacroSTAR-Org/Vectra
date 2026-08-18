@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 
 import 'core/app_version.dart';
 import 'core/logger.dart';
+import 'core/marketplace.dart' show marketMockEnabled, marketAutoInstallId;
 import 'core/paths.dart';
 import 'core/splash_gate.dart';
 import 'model/card.dart';
@@ -37,6 +38,18 @@ Future<void> main(List<String> args) async {
   // --verbose：把 debug 级日志也打出来（贴到文件里），排查用
   if (args.contains('--verbose')) {
     Log.setLevel(LogLevel.debug);
+  }
+  // --market-mock：插件市场走内置假数据，不联网。
+  // Unisphere 还没部署，而"浏览→安装→出现在组件库→添加到桌面"这条链路
+  // 必须能验收，靠它把服务器那一段替掉。
+  if (args.contains('--market-mock')) {
+    marketMockEnabled = true;
+  }
+  // --market-install=<id>：市场打开后自动点一次「安装」，用于自动验证整条链路
+  for (final a in args) {
+    if (a.startsWith('--market-install=')) {
+      marketAutoInstallId = a.substring('--market-install='.length).trim();
+    }
   }
   Log.i('app', '启动参数: ${args.join(" ")}');
 
@@ -218,6 +231,7 @@ class _MultiViewRootState extends State<_MultiViewRoot> {
           key: ValueKey('view:${_marketView!.viewId}'),
           view: _marketView!,
           child: MarketApp(
+            appKey: _appKey,
             state: widget.state,
             store: widget.store,
             registry: widget.registry,

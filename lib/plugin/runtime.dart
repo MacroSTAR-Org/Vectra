@@ -41,6 +41,14 @@ class PluginRuntime {
   JavascriptRuntime? _rt;
   final Map<String, Timer> _timers = {};
   bool _dead = false;
+
+  /// 已经被销毁（卡片没了）。
+  ///
+  /// 和 _dead 是两回事：_dead 是"插件失控了"，这个是"这张卡片不在了"。
+  /// 分开的原因是善后方式不同——失控要把原因显示给用户，销毁则要求彻底闭嘴：
+  /// 界面已经没了，再往 tree/error 里写就是往已 dispose 的 ValueNotifier 上写。
+  bool _disposed = false;
+
   String? _error;
 
   /// 插件最近一次 render 出来的 UI 树
@@ -98,8 +106,13 @@ class PluginRuntime {
   }
 
   /// 所有进入 JS 的调用都过这里：记录耗时、捕获异常、失控后不再派发
+  ///
+  /// 销毁之后一律不进：卡片重建时（改设置、装插件后重扫）旧运行时会被 dispose，
+  /// 而那一刻插件可能还有 HTTP 请求在飞。请求回来时若照旧往下走，_rt 已经是
+  /// null，解引用就抛"Null check operator used on a null value"——日志里会
+  /// 冒出一条"插件抛出异常"，看着像插件的错，其实是我们自己在拆掉的房子里开灯。
   JsEvalResult? _guard(JsEvalResult Function() body) {
-    if (_dead) return null;
+    if (_dead || _disposed || _rt == null) return null;
     final sw = Stopwatch()..start();
     try {
       final r = body();
@@ -128,7 +141,7 @@ class PluginRuntime {
   }
 
   Future<void> _handleCall(Map<String, Object?> msg) async {
-    if (_dead) return;
+    if (_dead || _disposed) return;
     final method = msg['method'] as String? ?? '';
     final args = (msg['args'] as Map?)?.cast<String, Object?>() ?? const {};
     final cb = msg['cb'] as String?;
@@ -155,6 +168,9 @@ class PluginRuntime {
     } catch (e) {
       result = {'ok': false, 'error': '$e'};
     }
+    // host 调用是异步的，等它回来时这张卡片可能已经没了（改设置、装插件后重扫
+    // 都会重建卡片）。再往下走就是对着已销毁的运行时说话。
+    if (_disposed || _dead) return;
     if (cb != null) {
       _guard(() => _rt!.evaluate('lw.__resolve(${jsonEncode(cb)}, ${jsonEncode(result)});'));
       _pump();
@@ -199,6 +215,9 @@ class PluginRuntime {
   }
 
   void _fail(String message) {
+    // 已经销毁的运行时不该再报错：界面早没了，tree/error 也已经 dispose，
+    // 这时候写进去既没人看得到，还会往已释放的对象上写。
+    if (_disposed) return;
     // 插件一旦失控就再也不调度了，界面上只剩一个错误框。不记下来的话，
     // 用户报"组件不动了"时无从查起 —— 是崩了、超时了、还是清单写错了。
     if (!_dead) Log.e('plugin', '${manifest.id}($instanceId) $message');
@@ -214,6 +233,9 @@ class PluginRuntime {
   String? get failure => _error;
 
   void dispose() {
+    if (_disposed) return;
+    // 先置位再拆：拆的过程中如果有异步回调回来，上面那几处判断能拦住它
+    _disposed = true;
     if (!_dead && _rt != null) {
       try {
         _rt!.evaluate('lw.__unmount();');

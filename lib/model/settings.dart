@@ -22,6 +22,7 @@ class AppSettings {
     this.glassBlur = 18,
     this.liveRefreshMs = 0,
     this.theme = 'auto',
+    this.marketBaseUrl = '',
   });
 
   /// 网格单元边长（逻辑像素）
@@ -61,8 +62,14 @@ class AppSettings {
   int liveRefreshMs;
 
   /// 深浅色：auto（跟随系统）/ light / dark。
-  /// 玻璃卡片的文字颜色按"底子明暗"翻转，保证可读性。
+  /// 只管设置窗口和侧边栏——卡片的文字明暗跟壁纸走（见 card_view）。
   String theme;
+
+  /// 插件市场服务器地址。空串表示用内置的默认地址（见 kMarketBaseUrl）。
+  ///
+  /// 留这个口子是为了指向自建/本地跑的 Unisphere（比如 http://localhost:8787），
+  /// 换服务器不用重新编译。
+  String marketBaseUrl;
 
   Map<String, Object?> toJson() => {
         'gridCell': gridCell,
@@ -78,6 +85,7 @@ class AppSettings {
         'glassBlur': glassBlur,
         'liveRefreshMs': liveRefreshMs,
         'theme': theme,
+        if (marketBaseUrl.isNotEmpty) 'marketBaseUrl': marketBaseUrl,
       };
 
   static AppSettings fromJson(Map<String, Object?> j) => AppSettings(
@@ -94,5 +102,6 @@ class AppSettings {
         glassBlur: (j['glassBlur'] as num?)?.toDouble() ?? 18,
         liveRefreshMs: (j['liveRefreshMs'] as num?)?.toInt() ?? 0,
         theme: j['theme'] as String? ?? 'auto',
+        marketBaseUrl: j['marketBaseUrl'] as String? ?? '',
       );
 }

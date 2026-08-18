@@ -395,6 +395,35 @@ void main() {
       expect(seen, [1000, 3000], reason: '每收到一块就该回报一次，进度条才动得起来');
     });
 
+    test('服务器写了错误原因时，把它原样带给用户', () async {
+      // Unisphere 出错时会给一句人话（v1 是裸的 {error}）。服务器比客户端
+      // 清楚发生了什么，能用它就别拿"HTTP 500"糊弄用户。
+      final client = MarketClient(
+        baseUrl: 'https://m.example.com',
+        client: MockClient((_) async => http.Response(
+            jsonEncode({'error': '插件目录正在重建，请稍后再试'}), 503,
+            headers: {'content-type': 'application/json; charset=utf-8'})),
+      );
+      await expectLater(
+        client.catalog(),
+        throwsA(isA<MarketException>().having(
+            (e) => e.message, 'message', '插件目录正在重建，请稍后再试')),
+      );
+    });
+
+    test('错误响应不是 JSON 时退回状态码，不至于把 HTML 糊到界面上', () async {
+      final client = MarketClient(
+        baseUrl: 'https://m.example.com',
+        client: MockClient(
+            (_) async => http.Response('<html>502 Bad Gateway</html>', 502)),
+      );
+      await expectLater(
+        client.catalog(),
+        throwsA(isA<MarketException>()
+            .having((e) => e.message, 'message', contains('502'))),
+      );
+    });
+
     test('下载地址不是 http/https 时直接拒绝', () async {
       final client = MarketClient(
         baseUrl: 'https://m.example.com',

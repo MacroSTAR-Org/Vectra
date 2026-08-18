@@ -219,7 +219,10 @@ class MarketClient {
       if (res.statusCode < 200 || res.statusCode >= 300) {
         Log.w('market',
             '请求返回 ${res.statusCode} ${uri.path}（${sw.elapsedMilliseconds}ms）');
-        throw MarketException('服务器返回 HTTP ${res.statusCode}');
+        // Unisphere 出错时会给一句人话（v1 是裸的 {error}，其余是
+        // {ok:false,error}）。有就用它——服务器比客户端清楚发生了什么。
+        throw MarketException(
+            _serverError(res.bodyBytes) ?? '服务器返回 HTTP ${res.statusCode}');
       }
       Log.i('market',
           '请求成功 ${uri.path} ${res.bodyBytes.length}B（${sw.elapsedMilliseconds}ms）');
@@ -231,6 +234,20 @@ class MarketClient {
       Log.w('market', '请求失败 ${uri.path}（${sw.elapsedMilliseconds}ms）: $e');
       throw MarketException('连不上市场服务器');
     }
+  }
+
+  /// 从错误响应体里把服务器写的那句话捞出来。捞不到返回 null。
+  static String? _serverError(List<int> body) {
+    try {
+      final j = jsonDecode(utf8.decode(body));
+      if (j is Map) {
+        final e = j['error'];
+        if (e is String && e.trim().isNotEmpty) return e.trim();
+      }
+    } catch (_) {
+      // 错误响应不是 JSON 很正常（网关的 HTML 错误页之类），当没有就是了
+    }
+    return null;
   }
 
   /// 下载插件包。[onProgress] 回报"已收到/总字节"，总字节未知时给 0。
@@ -435,4 +452,174 @@ class PluginInstaller {
       for (final e in files.entries) e.key.substring(prefix.length): e.value,
     };
   }
+}
+
+// ---------------- 假市场 ----------------
+
+/// `--market-mock` 是否开着。由 main() 按命令行参数置位。
+///
+/// 存在的理由：Unisphere 还没部署，而列表页、搜索、安装进度、装完出现在
+/// 组件库这一整条链路必须能验收。开着它时市场不联网，凭空造几个插件，
+/// 其中一个能真的装到 userdata\plugins\ 里跑起来。
+bool marketMockEnabled = false;
+
+/// 假市场。只在 [marketMockEnabled] 时顶替 [MarketClient]。
+class MockMarketClient extends MarketClient {
+  MockMarketClient() : super(baseUrl: 'mock://unisphere');
+
+  static const _delay = Duration(milliseconds: 350);
+
+  /// 这几条的字段结构和 Unisphere 的 /api/v1/catalog 完全一致
+  static final List<MarketPlugin> _plugins = [
+    const MarketPlugin(
+      id: 'hello-market',
+      name: '打招呼',
+      version: '1.0.0',
+      downloadUrl: 'mock://plugins/hello-market',
+      description: '装上就能跑的示例插件，用来验证整条安装链路',
+      author: 'MacroSTAR',
+      icon: '👋',
+      sizes: ['2x2', '3x2'],
+      updatedAt: '2026-08-18',
+    ),
+    const MarketPlugin(
+      id: 'clock-lite',
+      name: '轻时钟',
+      version: '1.0.0',
+      downloadUrl: 'mock://plugins/clock-lite',
+      description: '极简数字时钟，只显示时间和日期',
+      author: 'MacroSTAR',
+      icon: '🕐',
+      sizes: ['2x2', '3x2'],
+      updatedAt: '2026-08-17',
+    ),
+    const MarketPlugin(
+      id: 'clock',
+      name: '时钟',
+      version: '9.9.9',
+      downloadUrl: 'mock://plugins/clock',
+      description: '内置时钟的"新版本"，用来验证「更新」状态',
+      author: 'MacroSTAR',
+      icon: '⏰',
+      sizes: ['2x2', '3x2', '4x2'],
+      updatedAt: '2026-08-18',
+    ),
+    const MarketPlugin(
+      id: 'weather',
+      name: '天气',
+      version: '2.0.0',
+      downloadUrl: 'mock://plugins/weather',
+      description: '内置天气，版本一致，用来验证「已安装」状态',
+      author: 'MacroSTAR',
+      icon: '☀',
+      sizes: ['3x2', '3x3'],
+      updatedAt: '2026-08-16',
+    ),
+  ];
+
+  @override
+  Future<List<MarketPlugin>> catalog() async {
+    await Future<void>.delayed(_delay); // 装一下网络延迟，好看清加载态
+    Log.i('market', '假市场：返回 ${_plugins.length} 个插件');
+    return List.of(_plugins);
+  }
+
+  @override
+  Future<MarketPlugin> detail(String id) async {
+    await Future<void>.delayed(_delay);
+    final one = _plugins.where((p) => p.id == id).toList();
+    if (one.isEmpty) throw MarketException('假市场里没有这个插件');
+    final p = one.first;
+    return MarketPlugin(
+      id: p.id,
+      name: p.name,
+      version: p.version,
+      downloadUrl: p.downloadUrl,
+      description: p.description,
+      author: p.author,
+      icon: p.icon,
+      sizes: p.sizes,
+      updatedAt: p.updatedAt,
+      readme: '# ${p.name}\n\n${p.description}\n\n'
+          '这是假市场造出来的说明文字，用于验证详情页。\n\n'
+          '- 支持尺寸：${p.sizes.join(" / ")}\n'
+          '- 作者：${p.author}\n',
+    );
+  }
+
+  /// 现造一个能装的插件包，结构和 Unisphere 给的一致（zip 里套一层 id 目录）
+  @override
+  Future<Uint8List> download(
+    String url, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    final id = url.split('/').last;
+    final one = _plugins.where((p) => p.id == id).toList();
+    if (one.isEmpty) throw MarketException('假市场里没有这个插件');
+    final p = one.first;
+
+    final bytes = _buildZip(p);
+    // 分几次回报，进度条才有得动
+    const steps = 8;
+    for (var i = 1; i <= steps; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 90));
+      onProgress?.call(bytes.length * i ~/ steps, bytes.length);
+    }
+    Log.i('market', '假市场：${p.id} 下载完成 ${bytes.length}B');
+    return bytes;
+  }
+
+  static Uint8List _buildZip(MarketPlugin p) {
+    final manifest = jsonEncode({
+      'id': p.id,
+      'name': p.name,
+      'version': p.version,
+      'entry': 'index.js',
+      'description': p.description,
+      'author': p.author,
+      'icon': p.icon,
+      'sizes': p.sizes,
+      'defaultSize': p.sizes.first,
+    });
+    final js = '''
+// 假市场装出来的插件：画个名字和版本，证明它真的跑起来了
+lw.register({
+  mount: function (ctx) {
+    ctx.render({
+      t: 'col', main: 'center', cross: 'center', gap: 6,
+      children: [
+        { t: 'text', v: ${jsonEncode(p.icon)}, size: 26 },
+        { t: 'text', v: ${jsonEncode(p.name)}, size: 15, weight: 600 },
+        { t: 'text', v: 'v${p.version}', size: 11, opacity: 0.5 }
+      ]
+    });
+  }
+});
+''';
+    final archive = Archive();
+    void add(String name, String content) {
+      final b = utf8.encode(content);
+      archive.addFile(ArchiveFile('${p.id}/$name', b.length, b));
+    }
+
+    add('manifest.json', manifest);
+    add('index.js', js);
+    return Uint8List.fromList(ZipEncoder().encode(archive));
+  }
+}
+
+/// `--market-install=<id>`：市场一打开就自动装这个插件，装完留在列表页。
+///
+/// 为什么需要它：给 Flutter 视图投合成点击实测不生效（`--test-openpanel`
+/// 也是为同一件事存在的），而"下载→校验→解压→重扫"这条链路必须能自动验证，
+/// 不能每次都靠人手点。走的是和按钮完全相同的代码路径。
+String? marketAutoInstallId;
+
+/// 按当前设置挑一个市场客户端。
+///
+/// 优先级：`--market-mock` > 设置里填的地址 > 内置默认地址。
+MarketClient makeMarketClient(String configuredBaseUrl) {
+  if (marketMockEnabled) return MockMarketClient();
+  final url = configuredBaseUrl.trim();
+  return MarketClient(baseUrl: url.isEmpty ? kMarketBaseUrl : url);
 }

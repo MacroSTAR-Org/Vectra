@@ -341,6 +341,7 @@ class AppRootState extends State<AppRoot> with TrayListener {
   Future<void> _rebuildTrayMenu() async {
     await trayManager.setContextMenu(Menu(items: [
       MenuItem(key: 'panel', label: '控制面板'),
+      MenuItem(key: 'market', label: '插件市场'),
       MenuItem.separator(),
       MenuItem.checkbox(
           key: 'lock', label: '锁定布局', checked: widget.state.settings.locked),
@@ -373,11 +374,10 @@ class AppRootState extends State<AppRoot> with TrayListener {
       case 'refreshWall':
         _loadWallpaper();
       case 'rescan':
-        await widget.registry.scan();
-        Log.i('plugin',
-            '重新扫描插件，现有 ${widget.registry.list().length} 个'
-            '${widget.registry.errors.isEmpty ? "" : "，失败 ${widget.registry.errors.length} 个"}');
-        setState(() => _revision++);
+        await rescanPlugins();
+      case 'market':
+        Log.i('app', '打开插件市场');
+        NativeWindow.market.show();
       case 'quit':
         // saveNow 而不是 save：去抖的 300ms 还没到就退出会丢掉最后一次改动。
         // 插件数据是各自去抖的（待办勾选完立刻退出就会丢），一并刷盘。
@@ -392,6 +392,19 @@ class AppRootState extends State<AppRoot> with TrayListener {
     }
   }
 
+
+  /// 重新扫描插件目录，并让桌面上的卡片按新插件重建。
+  ///
+  /// 托盘的「重新扫描插件」和市场装完插件都走这里：装好的插件要立刻能在组件库
+  /// 里添加，被更新的插件要立刻换成新代码——两件事都靠 _revision 变化触发卡片
+  /// 重新挂载。
+  Future<void> rescanPlugins() async {
+    await widget.registry.scan();
+    Log.i('plugin',
+        '重新扫描插件，现有 ${widget.registry.list().length} 个'
+        '${widget.registry.errors.isEmpty ? "" : "，失败 ${widget.registry.errors.length} 个"}');
+    if (mounted) setState(() => _revision++);
+  }
 
   /// 打开设置窗口（任务栏里那个独立窗口），可指定停在哪页/定位到哪张卡片。
   ///

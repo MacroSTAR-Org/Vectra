@@ -521,6 +521,24 @@ class _ControlPanelState extends State<ControlPanel> {
                 ),
             ],
           ),
+        _group(
+          title: '获取更多组件',
+          icon: Icons.storefront_outlined,
+          children: [
+            Row(children: [
+              Expanded(
+                child: Text(
+                  '在插件市场浏览、安装社区做的组件。',
+                  style: TextStyle(color: _c.ink60, fontSize: 12),
+                ),
+              ),
+              FilledButton(
+                onPressed: () => NativeWindow.market.show(),
+                child: const Text('打开插件市场'),
+              ),
+            ]),
+          ],
+        ),
         Padding(
           padding: const EdgeInsets.only(top: 2),
           child: Text(
