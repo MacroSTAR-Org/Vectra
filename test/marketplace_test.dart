@@ -424,6 +424,28 @@ void main() {
       );
     });
 
+    test('服务器把下载地址写坏了也要能装（实测：http 配 443 端口）', () async {
+      // Unisphere 实际返回的就是
+      // http://unisphere.macrostar.top:443/api/vectra/plugins/clock-lite/release
+      // ——反代没传 X-Forwarded-Proto，应用拿 http 拼上了 https 的端口，
+      // 照着连必然失败。既然目录就是从这个源拉下来的，就按这个源去下。
+      Uri? asked;
+      final client = MarketClient(
+        baseUrl: 'https://unisphere.macrostar.top',
+        client: MockClient.streaming((req, _) async {
+          asked = req.url;
+          return http.StreamedResponse(
+              Stream.value(<int>[1, 2, 3]), 200, contentLength: 3);
+        }),
+      );
+
+      await client.download(
+          'http://unisphere.macrostar.top:443/api/vectra/plugins/clock-lite/release');
+
+      expect(asked.toString(),
+          'https://unisphere.macrostar.top/api/vectra/plugins/clock-lite/release');
+    });
+
     test('下载地址不是 http/https 时直接拒绝', () async {
       final client = MarketClient(
         baseUrl: 'https://m.example.com',
@@ -431,6 +453,44 @@ void main() {
       );
       await expectLater(client.download('file:///C:/windows/evil.exe'),
           throwsA(isA<MarketException>()));
+    });
+  });
+  // ---------------- 下载地址归一化 ----------------
+
+  group('下载地址归一化', () {
+    const base = 'https://unisphere.macrostar.top';
+
+    test('同主机时按 base 的协议和端口重写', () {
+      expect(
+        resolveDownloadUrl(base,
+                'http://unisphere.macrostar.top:443/api/vectra/plugins/x/release')
+            .toString(),
+        '$base/api/vectra/plugins/x/release',
+      );
+    });
+
+    test('相对地址拼到 base 上（完整版接口给的资源路径就是相对的）', () {
+      expect(resolveDownloadUrl(base, '/api/vectra/plugins/x/release').toString(),
+          '$base/api/vectra/plugins/x/release');
+    });
+
+    test('别的主机原样保留——插件包放 CDN 是合法做法', () {
+      const cdn = 'https://cdn.example.com/pkg/x-1.0.0.zip';
+      expect(resolveDownloadUrl(base, cdn).toString(), cdn);
+    });
+
+    test('base 带非标准端口时跟着 base 走（本地跑的 Unisphere）', () {
+      expect(
+        resolveDownloadUrl('http://localhost:8787',
+                'http://localhost:443/api/vectra/plugins/x/release')
+            .toString(),
+        'http://localhost:8787/api/vectra/plugins/x/release',
+      );
+    });
+
+    test('非 http/https 一律拒绝', () {
+      expect(resolveDownloadUrl(base, 'file:///C:/windows/evil.exe'), isNull);
+      expect(resolveDownloadUrl(base, ''), isNull);
     });
   });
 }

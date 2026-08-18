@@ -31,7 +31,7 @@ import 'logger.dart';
 /// `/api/v1/plugins/{id}` 由 Unisphere 提供，**默认只返回 Vectra 分区**
 /// （Vectra 与 Lunar X 是两个不同产品，插件不通用）。
 /// 单独拎出来是为了以后能在设置里改（指向自建/测试服务器）。
-const String kMarketBaseUrl = 'https://unisphere.macrostar.dev';
+const String kMarketBaseUrl = 'https://unisphere.macrostar.top';
 
 /// 市场里的一个插件条目。
 ///
@@ -137,6 +137,36 @@ List<MarketPlugin> parseCatalog(Object? json) {
   return out;
 }
 
+/// 把服务器广播的下载地址归一化到"我们正在对话的那个源"。
+///
+/// 起因是实测：Unisphere 返回的 downloadUrl 是
+/// `http://unisphere.macrostar.top:443/api/vectra/plugins/clock-lite/release`
+/// —— http 配 443 端口，连不上（反代没把 X-Forwarded-Proto 传给应用，
+/// 应用于是拿 http 拼上了 https 的端口）。服务端该修，但客户端不能因为
+/// 服务器写错一个字段就装不了插件。
+///
+/// 规则：
+///   - 相对地址 → 拼到 base 上（完整版接口给的资源路径本来就是相对的）
+///   - 同主机 → 一律改用 base 的协议和端口。我们刚刚就是从这个源把目录拉下来的，
+///     它一定是通的；服务器自述的协议反而不可信。
+///   - 别的主机 → 原样保留。插件包放 CDN / 对象存储是合法做法，不该被改写。
+Uri? resolveDownloadUrl(String baseUrl, String advertised) {
+  final base = Uri.tryParse(baseUrl);
+  final raw = Uri.tryParse(advertised.trim());
+  if (base == null || raw == null || advertised.trim().isEmpty) return null;
+
+  final abs = raw.hasScheme ? raw : base.resolveUri(raw);
+  if (abs.scheme != 'http' && abs.scheme != 'https') return null;
+
+  if (abs.host == base.host) {
+    return abs.replace(
+      scheme: base.scheme,
+      port: base.hasPort ? base.port : null,
+    );
+  }
+  return abs;
+}
+
 /// 插件 id 是否能安全地当目录名用。
 ///
 /// 规则照抄 manifest 那边：只允许小写字母、数字、`-`、`_`。这一条挡的是
@@ -188,7 +218,12 @@ class MarketClient {
   final String baseUrl;
   final http.Client _client;
 
-  static const Duration _timeout = Duration(seconds: 15);
+  /// 等首个响应的上限。
+  ///
+  /// 给到 30 秒是实测定的：Unisphere 冷启动时第一个请求要二十几秒才回，
+  /// 15 秒会把"服务器正在醒"误判成"连不上"。这只管到响应头，下载正文的时间
+  /// 不受它限制。
+  static const Duration _timeout = Duration(seconds: 30);
 
   Map<String, String> get _headers => {'User-Agent': appUserAgent};
 
@@ -257,9 +292,14 @@ class MarketClient {
     String url, {
     void Function(int received, int total)? onProgress,
   }) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
+    // 服务器给的地址先归一化：它可能是相对的，也可能协议/端口自相矛盾
+    // （实测就遇到 http 配 443），见 resolveDownloadUrl。
+    final uri = resolveDownloadUrl(baseUrl, url);
+    if (uri == null) {
       throw MarketException('下载地址不合法');
+    }
+    if (uri.toString() != url.trim()) {
+      Log.d('market', '下载地址已归一化：$url -> $uri');
     }
     final sw = Stopwatch()..start();
     try {
