@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 
 import 'core/app_version.dart';
 import 'core/logger.dart';
-import 'core/marketplace.dart' show marketMockEnabled, marketAutoInstallId;
+import 'core/marketplace.dart' show marketMockEnabled, marketAutoInstallId, marketAutoOpenId, marketAutoUninstallId;
 import 'core/paths.dart';
 import 'core/splash_gate.dart';
 import 'model/card.dart';
@@ -49,6 +49,15 @@ Future<void> main(List<String> args) async {
   for (final a in args) {
     if (a.startsWith('--market-install=')) {
       marketAutoInstallId = a.substring('--market-install='.length).trim();
+    }
+    // --market-open=<id>：直接进详情页，同样是为了能自动验收
+    if (a.startsWith('--market-open=')) {
+      marketAutoOpenId = a.substring('--market-open='.length).trim();
+    }
+    // --market-uninstall=<id>：直接卸载（跳过确认框），验的是删卡片+删目录+重扫
+    if (a.startsWith('--market-uninstall=')) {
+      marketAutoUninstallId =
+          a.substring('--market-uninstall='.length).trim();
     }
   }
   Log.i('app', '启动参数: ${args.join(" ")}');

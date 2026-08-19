@@ -6,7 +6,6 @@
 library;
 
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:flutter/gestures.dart' show PointerDownEvent;
 import 'package:flutter/material.dart' as m;
 
 import '../core/logger.dart';
@@ -17,6 +16,7 @@ import '../native/native_bridge.dart';
 import '../plugin/registry.dart';
 import '../store/store.dart';
 import 'app_root.dart';
+import 'markdown_view.dart';
 import 'panel_app.dart' show panelThemeRevision;
 import 'window_chrome.dart';
 
@@ -93,6 +93,14 @@ class _MarketWindowState extends State<_MarketWindow> {
   /// 刚装好的插件，卡片上给一句"已安装"的即时反馈
   final Set<String> _justDone = {};
 
+  /// 打开了哪个插件的详情页；null 表示停在列表页
+  String? _openId;
+
+  /// 详情（含 README），按 id 缓存，返回列表再点进来不用重拉
+  final Map<String, MarketPlugin> _details = {};
+  bool _detailLoading = false;
+  String? _detailError;
+
   @override
   void initState() {
     super.initState();
@@ -113,6 +121,30 @@ class _MarketWindowState extends State<_MarketWindow> {
         _plugins = list;
         _loading = false;
       });
+      // --market-open=<id>：直接进详情页，用于自动验收
+      final open = marketAutoOpenId;
+      if (open != null) {
+        marketAutoOpenId = null;
+        final hit = list.where((p) => p.id == open).toList();
+        if (hit.isNotEmpty) {
+          Log.i('market', '--market-open：打开 $open 的详情页');
+          await _open(hit.first);
+        } else {
+          Log.w('market', '--market-open 指定的 $open 不在目录里');
+        }
+      }
+      // --market-uninstall=<id>：直接卸载，用于自动验收
+      final unin = marketAutoUninstallId;
+      if (unin != null) {
+        marketAutoUninstallId = null;
+        final hit = list.where((p) => p.id == unin).toList();
+        if (hit.isNotEmpty) {
+          Log.i('market', '--market-uninstall：卸载 $unin（跳过确认框）');
+          await _doUninstall(hit.first);
+        } else {
+          Log.w('market', '--market-uninstall 指定的 $unin 不在目录里');
+        }
+      }
       // --market-install=<id>：自动点一次「安装」，用于自动验证（见该变量的说明）
       final auto = marketAutoInstallId;
       if (auto != null) {
@@ -174,6 +206,82 @@ class _MarketWindowState extends State<_MarketWindow> {
     }
   }
 
+  /// 打开详情页。详情比目录多一个 README，得单独拉一次。
+  Future<void> _open(MarketPlugin p) async {
+    setState(() {
+      _openId = p.id;
+      _detailError = null;
+      _detailLoading = !_details.containsKey(p.id);
+    });
+    if (_details.containsKey(p.id)) return;
+    try {
+      final full = await _client.detail(p.id);
+      if (!mounted) return;
+      setState(() {
+        _details[p.id] = full;
+        _detailLoading = false;
+      });
+    } on MarketException catch (e) {
+      if (!mounted) return;
+      // 详情拉不到不该让人卡在空页面上：目录里那份信息还能用，
+      // 只是没有 README
+      setState(() {
+        _detailError = e.message;
+        _detailLoading = false;
+      });
+    }
+  }
+
+  /// 卸载。桌面上还摆着的卡片会一起删掉——留着它们只会变成一片"找不到插件"
+  /// 的错误框，用户还得自己一张张去删。
+  Future<void> _uninstall(MarketPlugin p) async {
+    final cards =
+        widget.state.cards.where((c) => c.pluginId == p.id).toList();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => ContentDialog(
+        title: Text('卸载「${p.name}」'),
+        content: Text(cards.isEmpty
+            ? '将从插件目录中删除它。'
+            : '将从插件目录中删除它，并同时移除桌面上的 ${cards.length} 张卡片。'),
+        actions: [
+          Button(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('卸载'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _doUninstall(p);
+  }
+
+  /// 确认之后真正干的活。单独拎出来是为了能被 --market-uninstall 直接调用
+  /// 做自动验收——确认框本身留给真实用户，这里验的是"删卡片 + 删目录 + 重扫"
+  /// 这段有风险的逻辑。
+  Future<void> _doUninstall(MarketPlugin p) async {
+    final cards = widget.state.cards.where((c) => c.pluginId == p.id).toList();
+    try {
+      // 先删卡片再删文件：反过来的话，中间那一瞬卡片指向的插件已经没了，
+      // 桌面会闪一片"找不到插件"的错误框
+      for (final c in cards) {
+        widget.appKey.currentState?.removeCard(c);
+      }
+      await _installer.uninstall(p.id);
+      await widget.appKey.currentState?.rescanPlugins();
+      Log.i('market', '已卸载 ${p.id}，同时移除 ${cards.length} 张卡片');
+      if (!mounted) return;
+      setState(() => _justDone.remove(p.id));
+    } on MarketException catch (e) {
+      if (!mounted) return;
+      _toast('${p.name}：${e.message}');
+    }
+  }
+
   void _toast(String message) {
     if (!mounted) return;
     displayInfoBar(context, builder: (context, close) {
@@ -221,8 +329,9 @@ class _MarketWindowState extends State<_MarketWindow> {
           Column(
             children: [
               _titleBar(),
-              _searchRow(),
-              Expanded(child: _content()),
+              // 详情页有自己的返回条，不显示搜索框
+              if (_openId == null) _searchRow(),
+              Expanded(child: _openId == null ? _content() : _detailPage()),
             ],
           ),
           ...resizeHandles(NativeWindow.market),
@@ -370,12 +479,11 @@ class _MarketWindowState extends State<_MarketWindow> {
     final progress = _installing[p.id];
     final busy = progress != null;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _border),
-      ),
+    return _HoverCard(
+      onTap: () => _open(p),
+      color: _card,
+      border: _border,
+      light: widget.light,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -461,6 +569,200 @@ class _MarketWindowState extends State<_MarketWindow> {
     );
   }
 
+  // ---------------- 详情页 ----------------
+
+  Widget _detailPage() {
+    final id = _openId!;
+    // 详情没拉到就先用目录里那份：名字版本简介都在，只差 README
+    final listed = (_plugins ?? const <MarketPlugin>[])
+        .where((e) => e.id == id)
+        .toList();
+    final p = _details[id] ?? (listed.isEmpty ? null : listed.first);
+    if (p == null) {
+      return Center(
+        child: Text('找不到这个插件', style: TextStyle(fontSize: 12, color: _ink60)),
+      );
+    }
+
+    final local = widget.registry[id]?.manifest;
+    final state = installStateOf(p, local);
+    final progress = _installing[id];
+    // 内置插件在 assets 里，删不掉也不该删
+    final canUninstall = local != null && local.source == 'user';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: Row(children: [
+            IconButton(
+              icon: Row(mainAxisSize: MainAxisSize.min, children: [
+                m.Icon(m.Icons.arrow_back_rounded, size: 16, color: _ink60),
+                const SizedBox(width: 6),
+                Text('返回', style: TextStyle(fontSize: 12, color: _ink60)),
+              ]),
+              onPressed: () => setState(() => _openId = null),
+            ),
+          ]),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(28, 8, 28, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _detailHeader(p, state, progress, canUninstall),
+                const SizedBox(height: 20),
+                if (_detailLoading)
+                  Row(children: [
+                    const SizedBox(
+                        width: 14, height: 14, child: ProgressRing(strokeWidth: 2)),
+                    const SizedBox(width: 8),
+                    Text('正在加载说明…',
+                        style: TextStyle(fontSize: 11.5, color: _ink40)),
+                  ])
+                else if (p.readme != null && p.readme!.trim().isNotEmpty)
+                  MarkdownView(source: p.readme!, ink: _ink)
+                else ...[
+                  Text(p.description,
+                      style: TextStyle(
+                          fontSize: 12.5, height: 1.6, color: _ink60)),
+                  if (_detailError != null) ...[
+                    const SizedBox(height: 10),
+                    Text('说明加载失败：$_detailError',
+                        style: TextStyle(fontSize: 11, color: _ink40)),
+                  ],
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _detailHeader(MarketPlugin p, InstallState state, double? progress,
+      bool canUninstall) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 64,
+          height: 64,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color:
+                widget.light ? const Color(0x0D000000) : const Color(0x14FFFFFF),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Text(p.icon, style: const TextStyle(fontSize: 30)),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic, children: [
+                Flexible(
+                  child: Text(p.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: _ink)),
+                ),
+                const SizedBox(width: 8),
+                Text('v${p.version}',
+                    style: TextStyle(fontSize: 12, color: _ink40)),
+              ]),
+              const SizedBox(height: 4),
+              Text(
+                [
+                  if (p.author.isNotEmpty) p.author,
+                  if (p.updatedAt != null) '更新于 ${_shortDate(p.updatedAt!)}',
+                ].join(' · '),
+                style: TextStyle(fontSize: 11.5, color: _ink40),
+              ),
+              const SizedBox(height: 10),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final s in p.sizes)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: widget.light
+                          ? const Color(0x0D000000)
+                          : const Color(0x14FFFFFF),
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    child: Text(s,
+                        style: TextStyle(fontSize: 10.5, color: _ink60)),
+                  ),
+              ]),
+              const SizedBox(height: 14),
+              Row(children: [
+                SizedBox(
+                  width: 150,
+                  child: _bigActionButton(p, state, progress),
+                ),
+                if (canUninstall) ...[
+                  const SizedBox(width: 10),
+                  Button(
+                    onPressed:
+                        progress != null ? null : () => _uninstall(p),
+                    child: const Text('卸载'),
+                  ),
+                ],
+              ]),
+              if (progress != null) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: 260,
+                  child: ProgressBar(
+                      value: progress >= 0 ? progress * 100 : null),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 详情页那个大按钮。进度直接写在按钮上，不用另找地方看。
+  Widget _bigActionButton(
+      MarketPlugin p, InstallState state, double? progress) {
+    if (progress != null) {
+      return FilledButton(
+        onPressed: null,
+        child: Text(progress >= 0
+            ? '下载中 ${(progress * 100).round()}%'
+            : '下载中…'),
+      );
+    }
+    switch (state) {
+      case InstallState.installed:
+        return Button(onPressed: null, child: const Text('已安装'));
+      case InstallState.updatable:
+        return FilledButton(
+          onPressed: () => _install(p),
+          child: Text('更新到 ${p.version}'),
+        );
+      case InstallState.notInstalled:
+        return FilledButton(
+          onPressed: () => _install(p),
+          child: const Text('安装'),
+        );
+    }
+  }
+
+  /// 2026-08-18T09:21:25.000Z -> 2026-08-18
+  String _shortDate(String iso) =>
+      iso.length >= 10 ? iso.substring(0, 10) : iso;
+
   Widget _actionButton(
       MarketPlugin p, InstallState state, double? progress) {
     if (progress != null) {
@@ -484,5 +786,58 @@ class _MarketWindowState extends State<_MarketWindow> {
           child: const Text('安装', style: TextStyle(fontSize: 11)),
         );
     }
+  }
+}
+
+/// 列表里的插件卡片：能点、鼠标悬停时微微抬起来。
+///
+/// 单独一个 widget 是因为 hover 要自己的 State，而列表是无状态地铺出来的。
+class _HoverCard extends StatefulWidget {
+  const _HoverCard({
+    required this.child,
+    required this.onTap,
+    required this.color,
+    required this.border,
+    required this.light,
+  });
+
+  final Widget child;
+  final VoidCallback onTap;
+  final Color color;
+  final Color border;
+  final bool light;
+
+  @override
+  State<_HoverCard> createState() => _HoverCardState();
+}
+
+class _HoverCardState extends State<_HoverCard> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          decoration: BoxDecoration(
+            color: widget.color,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: _hover
+                    ? (widget.light
+                        ? const Color(0x33000000)
+                        : const Color(0x40FFFFFF))
+                    : widget.border),
+          ),
+          child: widget.child,
+        ),
+      ),
+    );
   }
 }

@@ -655,6 +655,14 @@ lw.register({
 /// 不能每次都靠人手点。走的是和按钮完全相同的代码路径。
 String? marketAutoInstallId;
 
+/// `--market-open=<id>`：市场一打开就直接进这个插件的详情页。
+/// 和上面同一个理由——详情页也得能自动打开来看，不然每次验收都要人手点。
+String? marketAutoOpenId;
+
+/// `--market-uninstall=<id>`：直接执行卸载（跳过确认框）。
+/// 确认框留给真实用户；这里要自动验的是"删卡片 + 删目录 + 重扫"那段逻辑。
+String? marketAutoUninstallId;
+
 /// 按当前设置挑一个市场客户端。
 ///
 /// 优先级：`--market-mock` > 设置里填的地址 > 内置默认地址。
