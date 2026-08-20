@@ -30,9 +30,11 @@ bool _enabled = true;
 /// 在 runApp 之前调用。必须赶在 Flutter 引擎开始跑之前，否则引擎初始化期间
 /// 抛的异常就抓不到。
 ///
-/// [runApp] 是同步的——SentryFlutter.init 的 appRunner 接受 `Future<void> Function()`
-/// 但同步函数也兼容（Dart 会自动包成 Future）。
-Future<void> initSentry({required void Function() runApp}) async {
+/// **不用 appRunner 模式**：SentryFlutter.init 的 appRunner 参数会在 init
+/// 内部调 runApp，但 runWidget 不返回（跑消息循环），导致 init 的 await
+/// 永远不完成、SDK 初始化收尾（后台上传通道等）跑不完。改成先 init 再 run，
+/// init 自己 await 完了再交给调用方去 run。
+Future<void> initSentry() async {
   await SentryFlutter.init(
     (options) {
       options.dsn = kSentryDsn;
@@ -51,16 +53,14 @@ Future<void> initSentry({required void Function() runApp}) async {
       options.anrTimeoutInterval = const Duration(seconds: 5);
       // 关掉 PII 收集：错误堆栈里不该带用户路径之类的个人信息
       options.sendDefaultPii = false;
-      // 发送前的钩子：把 Log 里那条错误原文也带上，方便在面板上直接看
-      // 上下文（堆栈只告诉你"在哪一行"，日志告诉你"当时在干什么"）。
+      // 发送前的钩子：--no-sentry 时在这里拦掉
       options.beforeSend = (event, hint) {
-        // --no-sentry 时不在 init 里关（init 已经跑过），在这里拦
         if (!_enabled) return null;
         return event;
       };
     },
-    appRunner: runApp,
   );
+  // appRunner 不用了（见函数注释），init 返回后调用方自己 run
 }
 
 /// 主动上报一条错误。给 Log.e 用。
