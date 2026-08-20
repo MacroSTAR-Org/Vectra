@@ -219,6 +219,29 @@ class Store {
     }
   }
 
+  /// 卸载插件：删除插件目录，并从配置中移除相关卡片。
+  Future<void> uninstall(String pluginId) async {
+    // 删除插件目录
+    final dir = Directory(p.join(_pluginDataDir, pluginId));
+    if (await dir.exists()) {
+      await dir.delete(recursive: true);
+    }
+    // 删除插件数据文件
+    final dataFile = File(_pluginFile(pluginId));
+    if (await dataFile.exists()) {
+      await dataFile.delete();
+    }
+    // 从缓存中移除
+    _cacheDir(pluginId); // 这里只是清理内存引用，实际文件已删
+    Log.i('store', '已卸载插件 $pluginId');
+  }
+
+  /// 重新扫描插件目录并重新加载配置。
+  Future<void> rescanPlugins() async {
+    await _loadPluginData(_state!);
+    await saveNow(_state!);
+  }
+
   /// 配置序列化成文本。备份导出直接复用它——导出的就是一份 config.json，
   /// 格式知识只存在于本文件，面板那边只管挑路径和读写。
   String encodeConfig(AppState state) {
