@@ -200,7 +200,10 @@ class _MarketWindowState extends State<_MarketWindow> {
       _toast('${p.name}：${e.message}');
     } catch (e) {
       if (!mounted) return;
-      Log.w('market', '安装 ${p.id} 失败: $e');
+      // MarketException 是"能预料到的"失败（坏 zip、路径不合法），
+      // 这条 catch 兜的是"预料不到的"——磁盘满、权限拒绝、文件锁。
+      // 那些是该看到的问题，上报。
+      Log.e('market', '安装 ${p.id} 失败: $e');
       setState(() => _installing.remove(p.id));
       _toast('${p.name}：安装失败');
     }

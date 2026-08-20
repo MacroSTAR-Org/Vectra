@@ -125,7 +125,12 @@ Future<void> main(List<String> args) async {
   // Sentry 先初始化（要 await 完毕），再跑 app。
   // 不能用 appRunner 模式：runWidget 不返回（跑消息循环），会导致
   // SentryFlutter.init 的 await 永远不完成、SDK 初始化收尾跑不完。
-  await sentry.initSentry();
+  try {
+    await sentry.initSentry();
+  } catch (e) {
+    // Sentry 自己起不来不该连累整个程序——记下来，后面照样跑
+    Log.e('app', 'Sentry 初始化失败（错误上报不可用）: $e');
+  }
 
   // --test-sentry 的异常在 init 之后发，确保 SDK 已经就绪
   if (args.contains('--test-sentry')) {

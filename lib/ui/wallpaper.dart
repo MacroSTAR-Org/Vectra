@@ -79,7 +79,9 @@ class Wallpaper {
       }
       if (src == null) {
         source.value = '失败：既抓不到桌面，也读不到壁纸文件';
-        Log.w('wallpaper', '桌面捕获与壁纸文件都失败');
+        // 两条路都走不通是反常的——要么 DWM 出了问题，要么壁纸文件被删了。
+        // 用户看到的是"卡片没有毛玻璃"，而我们只靠这条日志知道发生了什么。
+        Log.e('wallpaper', '桌面捕获与壁纸文件都失败');
         return;
       }
 

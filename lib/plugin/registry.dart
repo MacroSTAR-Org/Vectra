@@ -13,6 +13,7 @@ import 'dart:io';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 
+import '../core/logger.dart';
 import 'manifest.dart';
 
 class LoadedPlugin {
@@ -74,6 +75,7 @@ class PluginRegistry {
         _plugins[id] = LoadedPlugin(manifest, buf.toString());
       } catch (e) {
         errors['builtin/$id'] = '$e';
+        Log.e('plugin', '内置插件 $id 加载失败: $e');
       }
     }
   }
@@ -121,6 +123,7 @@ class PluginRegistry {
         _plugins[manifest.id] = LoadedPlugin(manifest, buf.toString());
       } catch (e) {
         errors[entry.path] = '$e';
+        Log.e('plugin', '用户插件 ${entry.path} 加载失败: $e');
       }
     }
   }

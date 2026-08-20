@@ -115,6 +115,7 @@ class Store {
       return state;
     } catch (e) {
       // 配置文件损坏时不能直接崩溃，退回默认并把坏文件留档
+      Log.e('store', 'config.json 损坏，已备份并退回默认: $e');
       try {
         await f.rename(
             '$_configFile.broken-${DateTime.now().millisecondsSinceEpoch}');
@@ -161,8 +162,9 @@ class Store {
         // 只占位不干活的墓碑；这里读的时候顺手清掉，写回时就消失了。
         m.removeWhere((_, v) => v == null);
         state.pluginData[id] = m;
-      } catch (e) {
-        Log.w('store', '插件数据损坏，已跳过 $id: $e');
+    } catch (e) {
+      // 插件数据损坏不该让整个启动失败——跳过这一个插件，其余照常
+      Log.w('store', '插件数据损坏，已跳过 $id: $e');
       }
     }
   }
