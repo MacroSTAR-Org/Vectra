@@ -175,9 +175,9 @@ windows/runner/      Win32：窗口层级、区域裁剪、抓屏、SMTC、启�
 <table>
   <tbody>
     <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/MacroSTAR-Org"><img src="https://github.com/MacroSTAR-Org.png?s=100" width="100px;" alt=""/><br /><sub><b>夏辉 Seren Xia</b></sub></a><br /><a href="https://github.com/MacroSTAR-Org/Vectra/commits?author=Seren-Xia" title="Code">💻</a> <a href="#design-Seren-Xia" title="Design">🎨</a> <a href="#ideas-Seren-Xia" title="Ideas">💡</a> <a href="#infra-Seren-Xia" title="Infrastructure">🚇</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/KiriharaReina"><img src="https://github.com/KiriharaReina.png?s=100" width="100px;" alt=""/><br /><sub><b>KiriharaReina</b></sub></a><br /><a href="https://github.com/MacroSTAR-Org/Vectra/commits?author=KiriharaReina" title="Code">💻</a> <a href="#design-KiriharaReina" title="Design">🎨</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/MichaelYoung"><img src="https://github.com/MichaelYoung.png?s=100" width="100px;" alt=""/><br /><sub><b>Michael Young</b></sub></a><br /><a href="https://github.com/MacroSTAR-Org/Vectra/commits?author=MichaelYoung" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/MacroSTAR-Org"><img src="https://github.com/Seren-Xia.png?s=100" width="100px;" alt=""/><br /><sub><b>夏辉 Seren Xia</b></sub></a><br /><a href="https://github.com/MacroSTAR-Org/Vectra/commits?author=Seren-Xia" title="Code">💻</a> <a href="#design-Seren-Xia" title="Design">🎨</a> <a href="#ideas-Seren-Xia" title="Ideas">💡</a> <a href="#infra-Seren-Xia" title="Infrastructure">🚇</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/KiriharaReina"><img src="https://github.com/kiriharareinanya-code.png?s=100" width="100px;" alt=""/><br /><sub><b>KiriharaReina</b></sub></a><br /><a href="https://github.com/MacroSTAR-Org/Vectra/commits?author=KiriharaReina" title="Code">💻</a> <a href="#design-KiriharaReina" title="Design">🎨</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/MichaelYoung"><img src="https://github.com/AChinaPerson.png?s=100" width="100px;" alt=""/><br /><sub><b>Michael Young</b></sub></a><br /><a href="https://github.com/MacroSTAR-Org/Vectra/commits?author=MichaelYoung" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>
