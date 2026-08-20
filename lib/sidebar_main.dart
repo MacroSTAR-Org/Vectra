@@ -299,10 +299,14 @@ class _SidebarHostState extends State<_SidebarHost> {
 
   Future<AiSettings> _readSettings() async {
     try {
-      final f = File(p.join(_dir, 'state.json'));
+      // 配置文件是 config.json（schema 3 之后）。
+      // **不要**读 state.json：那只是迁移用的旧文件，迁移完之后就再也不更新了，
+      // 读它会和面板完全脱节——面板改了写 config.json，侧边栏重载还读 state.json，
+      // 拿到的是迁移那一刻的快照，所有改动全部失效。
+      final f = File(p.join(_dir, 'config.json'));
       if (!await f.exists()) return AiSettings();
       final raw = jsonDecode(await f.readAsString()) as Map<String, Object?>;
-      // 主题偏好在 AppSettings 里（settings.theme），AI 配置在 settings.ai。
+      // 主题偏好在 AppSettings 里（settings.theme），AI 配置在 ai 键。
       // 侧边栏要做深浅色，两个都得读。
       final appSettings =
           (raw['settings'] as Map?)?.cast<String, Object?>() ?? const {};

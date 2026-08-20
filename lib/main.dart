@@ -8,10 +8,14 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import 'dart:async' show runZonedGuarded;
+
 import 'core/app_version.dart';
 import 'core/logger.dart';
 import 'core/marketplace.dart' show marketMockEnabled, marketAutoInstallId, marketAutoOpenId, marketAutoUninstallId;
 import 'core/paths.dart';
+import 'core/sentry.dart' as sentry;
+import 'core/sentry_reporter.dart' show wireSentryReporter;
 import 'core/splash_gate.dart';
 import 'model/card.dart';
 import 'native/native_bridge.dart';
@@ -102,6 +106,26 @@ Future<void> main(List<String> args) async {
     await store.saveNow(state);
   }
 
+  // --test-sentry：主动抛一条错误，验证 Better Stack 能收到。
+  // 上报链路是 Sentry SDK + Log.e 转发两条，这里两条都走一遍。
+  if (args.contains('--test-sentry')) {
+    Log.e('app', '这是一条测试错误（--test-sentry），用来验证 Better Stack 上报');
+    try {
+      throw StateError('sentry connectivity test from Vectra $appVersion');
+    } catch (e, st) {
+      await sentry.reportExceptionToSentry(e, st);
+    }
+    Log.i('app', '--test-sentry 已发出，检查 Better Stack 面板');
+  }
+
+  // --no-sentry：本地开发时不想把数据灌进 Better Stack 就加这个参数
+  if (args.contains('--no-sentry')) {
+    sentry.disableSentry();
+  }
+
+  // 把 logger 的 Log.e 接到 sentry：init 之后、app 跑之前
+  wireSentryReporter();
+
   // 启动幕布的进度以"卡片张数"计，得在播种默认布局之后才拍这个快照
   SplashGate.start(state.cards.length);
 
@@ -109,14 +133,30 @@ Future<void> main(List<String> args) async {
   // 和任务栏里那个独立的设置窗口。两个窗口共用**同一个引擎、同一个 isolate**，
   // 控制面板因此还能直接改 AppState 里的对象（缘由见 panel_window.h 顶部）。
   // runApp 只认一个隐式视图，多视图必须走 runWidget + ViewCollection。
-  runWidget(_MultiViewRoot(
-    state: state,
-    store: store,
-    registry: registry,
-    openPanel: args.contains('--panel'),
-    openMarket: args.contains('--market'),
-    openAi: args.contains('--ai'),
-  ));
+  //
+  // Sentry 包住整个 app：SDK 自己会装 FlutterError 和 PlatformDispatcher 的
+  // onError 钩子，下面这层 runZonedGuarded 补的是"异步 Future 没被 await
+  // 而抛的异常"——那条缝 FlutterError 抓不到。
+  await sentry.initSentry(
+    runApp: () {
+      runZonedGuarded(
+        () {
+          runWidget(_MultiViewRoot(
+            state: state,
+            store: store,
+            registry: registry,
+            openPanel: args.contains('--panel'),
+            openMarket: args.contains('--market'),
+            openAi: args.contains('--ai'),
+          ));
+        },
+        (error, stack) {
+          Log.e('app', '未捕获异常: $error', stack);
+          sentry.reportExceptionToSentry(error, stack);
+        },
+      );
+    },
+  );
 }
 
 /// 两个视图的根：隐式视图画桌面磁贴，第二个视图画设置窗口。

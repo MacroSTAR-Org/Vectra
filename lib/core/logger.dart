@@ -25,6 +25,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'sentry_reporter.dart';
+
 enum LogLevel {
   debug('D', 10),
   info('I', 20),
@@ -80,14 +82,15 @@ class Log {
   static void w(String module, String message) =>
       _log(LogLevel.warn, module, message);
 
-  static void e(String module, String message) =>
-      _log(LogLevel.error, module, message);
+  static void e(String module, String message, [StackTrace? stack]) =>
+      _log(LogLevel.error, module, message, stack);
 
   /// native（C++）转发进来的日志：native 自己不知道级别，统一按 info 收。
   /// 由 MethodChannel 回调直接调用，跨线程安全。
   static void native(String message) => _log(LogLevel.info, 'native', message);
 
-  static void _log(LogLevel l, String module, String message) {
+  static void _log(LogLevel l, String module, String message,
+      [StackTrace? stack]) {
     if (!_level.covers(l)) return;
     final now = DateTime.now();
     final tag = l.label;
@@ -100,6 +103,15 @@ class Log {
       stdout.writeln(line);
     }
     _file?.write(line);
+    // 错误级同时上报 Better Stack。Log 这层只看"是不是 error 级"——
+    // 不在这里按模块挑食，所有 error 都值得看一眼。warning 暂不上报，
+    // 避免接口偶发 403 之类把面板刷爆；需要的话以后再说。
+    if (l == LogLevel.error) {
+      reportToSentry('[$module] $message',
+          stack: stack,
+          level: SentryReportLevel.error,
+          tags: {'module': module});
+    }
   }
 
   /// 退出前把队列里欠着的日志都刷下去（app_root 的托盘退出路径调）。

@@ -11,7 +11,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # 鎵€浠ヤ笅闈㈣繖琛屽搴旂殑鐗堟湰鍙锋槸 0.1.1.120銆?
 #
 # 瑙勭煩锛氭瘡鍔犱竴涓?git 鑺傜偣锛屾渶鍚庝竴娈?+2锛?.1.1.120 -> 0.1.1.122 -> 0.1.1.124锛夈€?
-version: 0.1.2+132
+version: 0.1.2+134
 
 environment:
   sdk: ^3.12.2
@@ -44,6 +44,10 @@ dependencies:
   file_picker: ^11.0.3
   # 鍏充簬椤靛姩鎬佽鐗堟湰鍙?
   package_info_plus: ^8.3.0
+  # 错误上报：Better Stack（多平台数据去到同一个 DSN）。
+  # Flutter 的未捕获错误、Zone 外的异常，以及 Log.e 主动上报，都走它。
+  # release 用 appVersion 标，好在面板上区分版本。
+  sentry_flutter: ^8.14.2
 
 dev_dependencies:
   flutter_test:
