@@ -981,43 +981,72 @@ class _ControlPanelState extends State<ControlPanel> {
           title: '卡片底色',
           icon: Icons.color_lens_outlined,
           children: [
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                for (final c in const [
-                  0xFF2A2A2E, 0xFF1C1C20, 0xFF23303A, 0xFF2E2436,
-                  0xFF203029, 0xFF3A2A2A, 0xFFF2F2F5,
-                ])
-                  GestureDetector(
-                    onTap: () {
-                      _s.cardColor = c;
-                      _commit();
-                    },
-                    child: Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: Color(c),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: _s.cardColor == c
-                              ? _c.accent
-                              : _c.cardBorder,
-                          width: _s.cardColor == c ? 2 : 1,
+            _switch('从壁纸取色（莫奈取色）', _s.autoColorFromWallpaper, (v) {
+              _s.autoColorFromWallpaper = v;
+              _commit();
+            }),
+            Text(
+              '开着的时候下面选的颜色不生效，改成实时从当前壁纸算一个代表色——'
+              '算法跟 Android 12 的动态取色（Material You）同源，换壁纸卡片'
+              '底色跟着换。关掉立刻退回你手选的颜色，设置不会丢。',
+              style: TextStyle(fontSize: 10, color: _c.ink30, height: 1.5),
+            ),
+            const SizedBox(height: 4),
+            _switch('文字颜色也用取色（莫奈取色）', _s.autoForegroundFromWallpaper, (v) {
+              _s.autoForegroundFromWallpaper = v;
+              _commit();
+            }),
+            Text(
+              '默认文字颜色只有"深底白字/浅底黑字"两档；开着这个之后文字颜色'
+              '也从壁纸算，会带一点点色相而不是纯黑白，算法保证跟卡片底色的'
+              '对比度够读——跟上面那个开关各自独立，可以只开一个。',
+              style: TextStyle(fontSize: 10, color: _c.ink30, height: 1.5),
+            ),
+            const SizedBox(height: 10),
+            IgnorePointer(
+              ignoring: _s.autoColorFromWallpaper,
+              child: AnimatedOpacity(
+                opacity: _s.autoColorFromWallpaper ? 0.35 : 1.0,
+                duration: const Duration(milliseconds: 150),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final c in const [
+                      0xFF2A2A2E, 0xFF1C1C20, 0xFF23303A, 0xFF2E2436,
+                      0xFF203029, 0xFF3A2A2A, 0xFFF2F2F5,
+                    ])
+                      GestureDetector(
+                        onTap: () {
+                          _s.cardColor = c;
+                          _commit();
+                        },
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: Color(c),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _s.cardColor == c
+                                  ? _c.accent
+                                  : _c.cardBorder,
+                              width: _s.cardColor == c ? 2 : 1,
+                            ),
+                          ),
+                          child: _s.cardColor == c
+                              ? Icon(Icons.check,
+                                  size: 16,
+                                  color: Color(c).computeLuminance() > 0.5
+                                      ? Color(0x8A000000)
+                                      : _c.ink70)
+                              : null,
                         ),
                       ),
-                      child: _s.cardColor == c
-                          ? Icon(Icons.check,
-                              size: 16,
-                              color: Color(c).computeLuminance() > 0.5
-                                  ? Color(0x8A000000)
-                                  : _c.ink70)
-                          : null,
-                    ),
-                  ),
-                _customColorSwatch(),
-              ],
+                    _customColorSwatch(),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 6),
             Text(

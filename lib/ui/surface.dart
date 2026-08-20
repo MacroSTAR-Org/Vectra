@@ -438,8 +438,17 @@ class DesktopSurfaceState extends State<DesktopSurface> {
                     width: _px(card).w,
                     height: _px(card).h,
                     editing: _editingId == card.id,
+                    // 插件按尺寸自己排版（比如歌词卡按高度算能放几行），
+                    // 给它的必须是刨掉 CardView 内边距之后的真实可用尺寸，
+                    // 不然算出来的内容天生比卡片能装下的更高，底部溢出。
                     child: widget.buildPluginBody(
-                        card, Size(_px(card).w, _px(card).h)),
+                        card,
+                        Size(
+                          math.max(
+                              0, _px(card).w - CardView.contentPadding.horizontal),
+                          math.max(
+                              0, _px(card).h - CardView.contentPadding.vertical),
+                        )),
                   ),
                 ),
               ),

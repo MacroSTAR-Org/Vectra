@@ -23,6 +23,8 @@ class AppSettings {
     this.liveRefreshMs = 0,
     this.theme = 'auto',
     this.marketBaseUrl = '',
+    this.autoColorFromWallpaper = false,
+    this.autoForegroundFromWallpaper = false,
   });
 
   /// 网格单元边长（逻辑像素）
@@ -71,6 +73,18 @@ class AppSettings {
   /// 换服务器不用重新编译。
   String marketBaseUrl;
 
+  /// "莫奈取色"：卡片底色不用用户手选的固定色，改成实时从当前壁纸算一个
+  /// 代表色（算法和 Android 12 的 Material You 动态取色同源，见
+  /// Wallpaper.dominantColor）。开着的时候 [cardColor] 这个字段还留着
+  /// （不删、不清空），只是渲染时被这个动态色顶替，关掉开关立刻退回用户
+  /// 原来选的颜色，不丢设置。
+  bool autoColorFromWallpaper;
+
+  /// 前景色（文字/图标）也走"莫奈取色"：不再是"深底白字/浅底黑字"两档写死
+  /// 的黑白二选一，改用 Material You 算法配好的 onPrimary——跟 [cardColor]
+  /// 那个开关各自独立，可以只开一个。见 Wallpaper.dominantForeground。
+  bool autoForegroundFromWallpaper;
+
   Map<String, Object?> toJson() => {
         'gridCell': gridCell,
         'gridGap': gridGap,
@@ -86,6 +100,8 @@ class AppSettings {
         'liveRefreshMs': liveRefreshMs,
         'theme': theme,
         if (marketBaseUrl.isNotEmpty) 'marketBaseUrl': marketBaseUrl,
+        'autoColorFromWallpaper': autoColorFromWallpaper,
+        'autoForegroundFromWallpaper': autoForegroundFromWallpaper,
       };
 
   static AppSettings fromJson(Map<String, Object?> j) => AppSettings(
@@ -103,5 +119,8 @@ class AppSettings {
         liveRefreshMs: (j['liveRefreshMs'] as num?)?.toInt() ?? 0,
         theme: j['theme'] as String? ?? 'auto',
         marketBaseUrl: j['marketBaseUrl'] as String? ?? '',
+        autoColorFromWallpaper: j['autoColorFromWallpaper'] as bool? ?? false,
+        autoForegroundFromWallpaper:
+            j['autoForegroundFromWallpaper'] as bool? ?? false,
       );
 }

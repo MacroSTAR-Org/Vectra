@@ -64,6 +64,7 @@ class PluginRuntime {
     required double h,
     required int cols,
     required int rows,
+    String? themeAccent,
   }) async {
     // 挂载耗时是启动慢的头号嫌疑：插件多起来之后，这里的累计时间直接决定
     // 启动幕布挂多久。逐个记下来，慢的那个一眼就能挑出来。
@@ -93,6 +94,10 @@ class PluginRuntime {
         'settings': settings,
         'size': {'w': w, 'h': h},
         'grid': {'cols': cols, 'rows': rows},
+        // themeAccent 为 null 表示用户没开"莫奈取色"，插件自己兜底一个
+        // 写死的颜色；非 null 时是从壁纸实时算出来的强调色，见
+        // plugin_card_body.dart 里对 Wallpaper.dominantColor 的监听。
+        'theme': {'accent': themeAccent},
       });
       _guard(() => rt.evaluate('lw.__mount($ctx);'));
       _pump();
@@ -211,6 +216,14 @@ class PluginRuntime {
 
   void notifyResize(double w, double h, int cols, int rows) {
     _guard(() => _rt!.evaluate('lw.__resize($w, $h, $cols, $rows);'));
+    _pump();
+  }
+
+  /// "莫奈取色"实时变化时推给插件，跟 notifyResize 是同一套思路——
+  /// mount 时给过一次初始值，这里是壁纸换了之后的后续更新。
+  /// accent 为 null 表示用户关掉了取色开关，插件应该退回自己写死的颜色。
+  void notifyTheme(String? accent) {
+    _guard(() => _rt!.evaluate('lw.__theme(${jsonEncode(accent)});'));
     _pump();
   }
 
