@@ -25,26 +25,63 @@ lw.register({
     // 不如给足余量——封面小一点没人介意，字被切一半很难看。
     var TEXT_BLOCK = 70;
     // 封面也别占太宽，右边留给歌词。
-    var artSize = Math.min(H - PAD * 2 - TEXT_BLOCK, Math.round(W * 0.24));
+    //
+    // 封面和文字块之间还有一条 8px 的 gap（见下面 left 列的 col gap:8），
+    // 之前算 artSize 时漏了这一段，导致左列总高度 = artSize + 8 + TEXT_BLOCK
+    // 永远比"能用的高度"多 8px，卡片矮的时候这条缝正好就是溢出的那几像素。
+    var ART_GAP = 8;
+    var artSize = Math.min(H - PAD * 2 - TEXT_BLOCK - ART_GAP, Math.round(W * 0.24));
     if (artSize < 52) artSize = 52;
 
     // ---- 右列：按钮 + 进度条 + 歌词 ----
     var lyricSize = H >= 380 ? 15.5 : (H >= 260 ? 14 : 13);
-    // 行高：加 10px 余量（之前 +6），让行与行之间有呼吸感
-    var LINE_H = Math.ceil(lyricSize * 1.35) + 10;
+    // 行高：不再用"字号乘系数"去猜真实字体的行高——这条路已经错过三次
+    // （TEXT_BLOCK 猜过两次都少了，这里的 *1.35 公式后来实测也不够）。
+    // 下面这张表是拿真机同款字体（HarmonyOS Sans SC）实际量出来的单行/
+    // 双语组合高度（量法见 test/lyric_line_measure_test.dart），三档字号
+    // 和上面 lyricSize 的三个断点一一对应。+8 是行内 pad:[4,0] 的上下留白，
+    // 量出来的是纯文字高度，边距要另外算；再加 2px 做很小的容错余量。
+    var LINE_METRICS = {
+      13:   { single: 21, bilingual: 37 },
+      14:   { single: 23, bilingual: 41 },
+      15.5: { single: 25, bilingual: 45 }
+    };
+    var metrics = LINE_METRICS[lyricSize] || LINE_METRICS[13];
+    // 只有"正在唱"的这一行值得占双语的高度——上下文行本来就压到 0.14~0.55
+    // 的透明度，译文在那个淡度下基本看不清，之前每一行都按双语预留高度，
+    // 白白吃掉大半空间。改成只有当前行显示译文（下面 lyricArea 里按
+    // dist===0 判断），上下文行只留单行高度，矮卡片也能多挤出一两行。
+    var LINE_CONTEXT = metrics.single + 10;
+    var LINE_CURRENT = (S.trans ? metrics.bilingual : metrics.single) + 10;
+    // 歌词占位符（找不到歌词时显示的提示语）沿用上下文行的高度就够。
+    var LINE_H = LINE_CONTEXT;
     // 右列上半部分（按钮 + 进度条 + 时间 + 各处间隔）占掉的高度。
-    // 这个数是从截图上量的：内容顶边到第一行歌词顶边 113 逻辑像素。
-    // 按各控件标称尺寸相加只能得到 90，少了 23 —— 图标按钮和文字的实际
-    // 行高都比标称值大，估不准就别估。
-    // 三个控制按钮。图标本身前后曲小、播放键大，但外面的方盒子统一大小，
-    // 这样三者中心在同一条线上。比之前各大两号。
+    //
+    // 这个数原来写死 113，注释说是"从截图上量的"——用同样的手法（拿真实
+    // 字体在 flutter_test 里量，见 test/lyrics_head_measure_test.dart）
+    // 重新量了一遍，三个按钮 + 两条 gap:6 + 进度条 + 时间行实际只要 73，
+    // 113 多出来的 40 白白占掉了本该留给歌词的空间。改回量出来的数字，
+    // 只加 3px 容错（不同缩放/DPI 下取整的误差），不再多加"保险余量"。
     var CTRL_SIDE = 26;   // 上一首 / 下一首
     var CTRL_MAIN = 34;   // 播放 / 暂停
     var CTRL_BOX = 42;    // 三个按钮共用的方盒子边长
-    var HEAD_H = 113 + (CTRL_BOX - 42);
+    var HEAD_H = 76 + (CTRL_BOX - 42);
     // 行数按实际剩余高度算，而不是写死几档——卡片拉多大就显示多少行。
-    var lyricLines = Math.floor((H - PAD * 2 - HEAD_H - 12) / LINE_H);
-    if (lyricLines < 3) lyricLines = 3;
+    //
+    // 窗口里只有 1 行是"当前行"（占 LINE_CURRENT），其余都是上下文行
+    // （占 LINE_CONTEXT），按这个组合去解能放几行，而不是不管三七二十一
+    // 用同一个行高乘个数——那样要么当前行装不下、要么上下文行浪费空间。
+    //
+    // 这里之前强制"至少 3 行"，本意是不想让卡片矮的时候歌词区显得太空，
+    // 但矮而宽的卡片（比如默认的 5x2）开着双语歌词时，物理上就是装不下
+    // 3 行（头部 + 1 行双语当前行就已经用掉大半高度），却依然被强制塞
+    // 3 行，这才是"歌词区顶穿卡片底边"反复出现的真正原因。宁可矮卡片上
+    // 歌词行数少（至少 1 行，保证当前唱的这句总能完整露出来），也不要
+    // 为了凑够 3 行去撑爆卡片——嫌行数太少，把卡片拉高或者关掉"显示翻译"
+    // 就能多显示几行，这是空间的物理限制，不是能靠算法凑出来的。
+    var avail = H - PAD * 2 - HEAD_H - 12;
+    var lyricLines = Math.floor((avail - LINE_CURRENT) / LINE_CONTEXT) + 1;
+    if (lyricLines < 1) lyricLines = 1;
     // 上限只是防呆。之前写死 10，结果 6x4 的卡片底下空了一大块。
     if (lyricLines > 20) lyricLines = 20;
 
@@ -375,11 +412,12 @@ lw.register({
       for (var i = 0; i < lyricLines; i++) {
         var li = base + i;
         if (li >= lyrics.length) {
-          rows.push({ t: 'box', h: LINE_H });
+          rows.push({ t: 'box', h: LINE_CONTEXT });
           continue;
         }
         var line = lyrics[li];
         var dist = Math.abs(li - idx);
+        var isCurrent = dist === 0;
         // 焦点层级：越远越淡
         var op, trOp, sz, wt;
         if (dist === 0) {
@@ -393,12 +431,21 @@ lw.register({
         }
         var body = txt(line.s || '·', sz, null, op,
           { maxLines: 1, weight: wt });
-        var cell = line.tr
+        // 译文只在"正在唱"的这一行显示：上下文行本来就压到很淡的透明度，
+        // 译文在那个淡度下基本看不清，全部显示只是白白占空间（见上面
+        // LINE_CONTEXT/LINE_CURRENT 的说明）。
+        var cell = (isCurrent && line.tr)
           ? { t: 'col', gap: 2, children: [body, txt(line.tr, lyricSize - 3, null, trOp, { maxLines: 1 })] }
           : body;
+        // h + clip：每一行都钉死在各自的高度预算内，超出的部分（比如字号/
+        // 字重估算的一两像素误差）直接裁掉，而不是把整个歌词区顶高、拖累
+        // 外层 Column 整体溢出到卡片底边外。
         rows.push({
           t: 'tap', id: hLine[i],
-          child: { t: 'box', pad: [4, 0], child: cell }
+          child: {
+            t: 'box', h: isCurrent ? LINE_CURRENT : LINE_CONTEXT,
+            clip: true, pad: [4, 0], child: cell
+          }
         });
       }
       return { t: 'box', child: { t: 'col', gap: 0, children: rows } };
@@ -407,9 +454,10 @@ lw.register({
     function lyricPlaceholder() {
       var msg = lyricState === 'loading' ? '正在找歌词…' : '没找到这首歌的歌词';
       return {
-        // 高度必须和真有歌词时一致，用同一个 LINE_H。写成 lyricSize + 9
-        // 会让"没找到歌词"的占位比正常状态矮一截，切歌时整块跳一下。
-        t: 'box', center: true, h: LINE_H * lyricLines,
+        // 高度必须和真有歌词时一致：1 个当前行的高度 + 其余都是上下文行。
+        // 写少了会让"没找到歌词"的占位比正常状态矮一截，切歌时整块跳一下。
+        t: 'box', center: true,
+        h: LINE_CURRENT + LINE_CONTEXT * (lyricLines - 1),
         child: txt(msg, 12, null, 0.35)
       };
     }

@@ -203,14 +203,22 @@ std::vector<uint8_t> CaptureDesktop(int width, int height) {
       // Rec.709 的红蓝权重要跟着换过来，否则红/蓝为主的壁纸亮度会算歪：
       // 深红壁纸的真实亮度约 0.2126*R，按错的算只剩 0.0722*R，容易掉到
       // mean < 8 的门槛以下，把一帧本来抓得好好的桌面误判成"纯色帧"丢掉。
-      const double n = static_cast<double>(width) * height;
+      //
+      // 逐像素统计在高刷新率下是白花的钱：1280x720 就是 92 万次浮点乘加，
+      // 每帧都跑。这里隔 4 个像素取 1（步长 16 字节）——判定"整帧是不是
+      // 近乎纯色"只需要分布的量级，1/4 的样本足够，纯色帧的方差本来就
+      // 贴近 0，抽samples 再稀也压不出假阳性。
+      const size_t kStride = 16;  // 4 像素 x 4 字节
       double sum = 0.0, sumsq = 0.0;
-      for (size_t i = 0; i < out.size(); i += 4) {
+      size_t sampled = 0;
+      for (size_t i = 0; i + 2 < out.size(); i += kStride) {
         const double y = 0.0722 * out[i] + 0.7152 * out[i + 1] +
                          0.2126 * out[i + 2];
         sum += y;
         sumsq += y * y;
+        ++sampled;
       }
+      const double n = sampled > 0 ? static_cast<double>(sampled) : 1.0;
       const double mean = sum / n;
       const double variance = sumsq / n - mean * mean;
       if (variance < 16.0 || mean < 8.0) {

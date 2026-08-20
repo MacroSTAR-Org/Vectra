@@ -328,6 +328,14 @@ class _PluginViewState extends State<PluginView> {
       height: _num(n['h']),
       padding: _pad(n['pad']),
       alignment: n['center'] == true ? Alignment.center : null,
+      // clip:true 给固定宽高的盒子裁掉超出部分。插件按估算的文字尺寸给
+      // 每一行分配固定高度时，字体真实行高和插件估的数字对不上是常态
+      // （不同语言/字重的行高差异本来就没法在 JS 里精确算出来）——与其让
+      // 估算误差累加成一整块内容顶穿卡片底边（RenderFlex 的溢出警告只在
+      // debug 下画出来，release 下用户看到的是内容被无声裁掉，同样难看），
+      // 不如让每个盒子自己兜底裁一刀，误差只会体现成"这一行文字被裁了
+      // 一两像素"，而不是"歌词区整体溢出卡片"。
+      clipBehavior: n['clip'] == true ? Clip.hardEdge : Clip.none,
       decoration: BoxDecoration(
         color: _color(n['bg']),
         borderRadius: BorderRadius.circular(_num(n['radius']) ?? 0),
@@ -510,12 +518,20 @@ class _PluginViewState extends State<PluginView> {
         'right' => Icons.chevron_right,
         'up' => Icons.arrow_drop_up,
         'down' => Icons.arrow_drop_down,
+        // 天气图标：换成真正的气象语义图标，别再用 grain/flash_on 这种
+        // 名字对不上的通用符号硬凑（grain 本意是"颗粒"，flash_on 是"闪光
+        // 灯开关"，跟雨/雷完全不是一回事，凑合用一眼就能看出没认真做）。
         'sun' => Icons.wb_sunny_outlined,
+        'moon' => Icons.nights_stay_outlined,
         'cloud' => Icons.cloud_outlined,
-        'rain' => Icons.grain,
+        'cloud_sun' => Icons.wb_cloudy_outlined,
+        'rain' => Icons.water_drop_outlined,
         'snow' => Icons.ac_unit,
-        'fog' => Icons.blur_on,
-        'storm' => Icons.flash_on,
+        'sleet' => Icons.cloudy_snowing,
+        'fog' => Icons.foggy,
+        'storm' => Icons.thunderstorm_outlined,
+        'thermostat' => Icons.thermostat_outlined,
+        'air' => Icons.air,
         'settings' => Icons.settings,
         // 媒体控制
         'play' => Icons.play_arrow_rounded,

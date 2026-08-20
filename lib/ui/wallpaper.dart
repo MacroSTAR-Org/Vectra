@@ -20,6 +20,7 @@ import 'dart:ui' as ui;
 import '../core/logger.dart';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show Color, ColorScheme, MemoryImage, Brightness;
 import 'package:path/path.dart' as p;
 
 import '../native/native_bridge.dart';
@@ -29,7 +30,11 @@ class Wallpaper {
   static final ValueNotifier<ui.Image?> image = ValueNotifier(null);
 
   /// 相对屏幕逻辑尺寸的缩放。模糊本来就丢细节，半分辨率足够，且省一半显存。
-  static const double scale = 0.5;
+  ///
+  /// 0.4：模糊 sigma 在 _blur 里也乘这个系数（sigma * scale），图缩了模糊
+  /// 半径跟着缩，观感上"糊的程度"几乎不变，但抓屏/回读/纹理这几块的开销
+  /// 按平方降（0.4²/0.5² = 64%）。2560x1440 下位图从 3.7MB 降到 2.4MB。
+  static const double scale = 0.4;
 
   /// 最近一次是走捕获还是读文件，面板里显示给用户看
   static final ValueNotifier<String> source = ValueNotifier('未加载');
@@ -49,6 +54,25 @@ class Wallpaper {
   /// 整图平均亮度（0..1，Rec.709 加权）。玻璃卡片的文字颜色按它翻转，
   /// 亮壁纸用深字、暗壁纸用浅字，保证可读性。
   static final ValueNotifier<double> brightness = ValueNotifier(0.5);
+
+  /// 从壁纸算出来的代表色（"莫奈取色"）。算法跟 Android 12 Material You
+  /// 同源——Flutter 的 `ColorScheme.fromImageProvider` 内部就是用
+  /// material_color_utilities 对图片做量化取色，不是另起一套。
+  /// null 表示还没算出来（刚启动、或者这次刷新取色失败），用的人自己兜底。
+  static final ValueNotifier<Color?> dominantColor = ValueNotifier(null);
+
+  /// 配 [dominantColor] 用的前景色（对应 Material You 的 onPrimary）：
+  /// 算法已经保证跟 [dominantColor] 有足够对比度，不用再另外套
+  /// "亮底黑字/暗底白字"那套二选一的老逻辑。同样是 null-until-computed。
+  static final ValueNotifier<Color?> dominantForeground = ValueNotifier(null);
+
+  /// 要不要算"莫奈取色"。由 app_root 按两个开关（卡片底色取色 / 前景色
+  /// 取色）的并集设置。
+  ///
+  /// 这是整条刷新链路上最贵的一环——量化 + 构建整套 ColorScheme，而两个
+  /// 开关都关着时算出来的颜色根本没人读。以前是无条件算的（注释还写着
+  /// "常驻算不影响性能"，那是想当然），动态壁纸下等于每帧白烧一遍。
+  static bool colorExtraction = false;
 
   /// 分段耗时，用于定位瓶颈
   static int lastCaptureMs = 0;
@@ -94,7 +118,7 @@ class Wallpaper {
       image.value?.dispose();
       image.value = blurred;
       source.value = from;
-      brightness.value = await _avgBrightness(blurred);
+      await _updateDerived(blurred);
       // 动态壁纸下这条会按刷新间隔反复打，归 debug：默认级别看不到，
       // 需要时用 --verbose 打开
       Log.d('wallpaper', '来源=$from '
@@ -104,6 +128,81 @@ class Wallpaper {
       Log.w('wallpaper', '刷新失败: $e');
     } finally {
       _busy = false;
+    }
+  }
+
+  /// 缩略图的长边。112 不是随手取的：`ColorScheme.fromImageProvider` 内部
+  /// 第一步就是把图缩到长边 112 再量化，这里对齐它。
+  ///
+  /// 实测过等价性（同一张图走"全图编码"和"先缩再编码"两条路）：结果不是
+  /// 逐位相同，但只差 1/255——#425E91 vs #435E91，红通道 66 vs 67。缩放
+  /// 滤镜不完全一致，量化落桶时偶尔差一格，视觉上分辨不出来。
+  static const int _thumbSide = 112;
+
+  /// 亮度统计和莫奈取色都从同一张缩略图上算。
+  ///
+  /// 这两件事以前各自回读一次**全分辨率**图：亮度走 `toByteData()`
+  /// （1280x720 就是 3.7MB 的 GPU→CPU 回读），取色更浪费——先把整张图
+  /// PNG 编码一遍再让 `MemoryImage` 解码回来，而 fromImageProvider 拿到
+  /// 之后第一件事就是缩到 112，前面那一整轮编解码全是白干的。
+  ///
+  /// 两者要的都只是"整体色彩分布"，全分辨率没有意义。现在缩一次、回读
+  /// 一次，两边共用：回读量从 3.7MB 降到几十 KB，全图 PNG 编解码整个消失。
+  static Future<void> _updateDerived(ui.Image src) async {
+    ui.Image? thumb;
+    try {
+      thumb = await _thumbnail(src, _thumbSide);
+      final data = await thumb.toByteData();
+      if (data != null) brightness.value = _avgBrightness(data);
+      // 两个取色开关都关着时，算出来的颜色没有任何人读，直接省掉整段
+      if (colorExtraction) await _updateDominantColor(thumb);
+    } catch (e) {
+      Log.w('wallpaper', '派生数据计算失败: $e');
+    } finally {
+      thumb?.dispose();
+    }
+  }
+
+  /// 按长边缩到 [maxSide]，保持宽高比。源图本来就更小时原样复制一份，
+  /// 不做放大（放大既没信息量又浪费）。
+  static Future<ui.Image> _thumbnail(ui.Image src, int maxSide) async {
+    final longest = src.width > src.height ? src.width : src.height;
+    final scale = longest <= maxSide ? 1.0 : maxSide / longest;
+    final w = (src.width * scale).round().clamp(1, maxSide);
+    final h = (src.height * scale).round().clamp(1, maxSide);
+
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    canvas.drawImageRect(
+      src,
+      ui.Rect.fromLTWH(0, 0, src.width.toDouble(), src.height.toDouble()),
+      ui.Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()),
+      ui.Paint()..filterQuality = ui.FilterQuality.low,
+    );
+    final picture = recorder.endRecording();
+    final out = await picture.toImage(w, h);
+    picture.dispose();
+    return out;
+  }
+
+  /// "莫奈取色"：从缩略图里算一个代表色，写进 [dominantColor]。
+  ///
+  /// `ColorScheme.fromImageProvider` 只吃 `ImageProvider`，不吃现成的
+  /// `ui.Image`，所以仍要编码一次 PNG 包成 `MemoryImage`——但传进来的
+  /// 已经是 112 像素的缩略图，这次编解码的量可以忽略。取色失败（比如
+  /// 极端尺寸/全透明图）就保留旧值，不拿 null 覆盖一个原本能用的颜色。
+  static Future<void> _updateDominantColor(ui.Image img) async {
+    try {
+      final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
+      if (bytes == null) return;
+      final scheme = await ColorScheme.fromImageProvider(
+        provider: MemoryImage(bytes.buffer.asUint8List()),
+        brightness: Brightness.light,
+      );
+      dominantColor.value = scheme.primary;
+      dominantForeground.value = scheme.onPrimary;
+    } catch (e) {
+      Log.w('wallpaper', '取色失败: $e');
     }
   }
 
@@ -251,21 +350,27 @@ class Wallpaper {
     return out;
   }
 
-  /// 整图平均亮度。toByteData 读像素按步长采样（隔 4 个取 1），
-  /// 一次模糊后才跑一遍，不是每帧，开销可接受。
-  static Future<double> _avgBrightness(ui.Image img) async {
-    final data = await img.toByteData();
-    if (data == null) return 0.5;
+  /// 平均亮度（Rec.709 加权）。传进来的是 [_updateDerived] 已经回读好的
+  /// 缩略图像素，这里不再自己回读全图。
+  ///
+  /// 结果**量化到 0.01**。这个值只用来判断"底子是明是暗"以及当一个混合
+  /// 权重，千分位的抖动没有任何视觉意义；但它是个 ValueNotifier，值一变
+  /// 就通知，而 card_view 的 AnimatedBuilder 监听着它——动态壁纸下每帧
+  /// 那点浮动会让**所有卡片**跟着重建一次。量化之后绝大多数帧和上一帧
+  /// 完全相同，ValueNotifier 直接不通知，这些白重建就没了。
+  static double _avgBrightness(ByteData data) {
     final bytes =
         data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
     double sum = 0;
     var n = 0;
-    for (var i = 0; i + 2 < bytes.length; i += 16) {
+    // 缩略图本来就只有一万来个像素，逐像素统计即可，不用再跳采样
+    for (var i = 0; i + 2 < bytes.length; i += 4) {
       sum += (0.2126 * bytes[i] + 0.7152 * bytes[i + 1] +
               0.0722 * bytes[i + 2]) /
           255;
       n++;
     }
-    return n == 0 ? 0.5 : sum / n;
+    if (n == 0) return 0.5;
+    return ((sum / n) * 100).round() / 100;
   }
 }

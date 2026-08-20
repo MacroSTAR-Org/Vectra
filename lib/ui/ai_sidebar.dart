@@ -391,7 +391,13 @@ class _AiSidebarState extends State<AiSidebar> {
                   valueListenable: Wallpaper.image,
                   builder: (context, img, _) {
                     if (img == null) return const SizedBox.shrink();
-                    final s = 1 / Wallpaper.scale;
+                    // 放大系数固定 2.0，**不能**写 1 / Wallpaper.scale：
+                    // native 抓这张图时是硬编码除以 2 的（sidebar_window.cpp
+                    // 里 behind_w_ = (r.right - r.left) / 2），放大系数跟它
+                    // 配死。以前 Wallpaper.scale 恰好是 0.5，1/0.5 = 2.0 碰巧
+                    // 相等；scale 一改（比如磁贴那边为了省内存调成 0.4），
+                    // 系数变成 2.5，整张背景就比窗口大一圈、糊的位置全错。
+                    const s = 2.0;
                     return OverflowBox(
                       alignment: Alignment.topLeft,
                       maxWidth: double.infinity,

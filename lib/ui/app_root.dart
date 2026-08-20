@@ -103,6 +103,11 @@ class AppRootState extends State<AppRoot> with TrayListener {
 
   void _loadWallpaper() {
     final s = widget.state.settings;
+    // 取色是刷新链路上最贵的一环，两个开关都关着时算出来没人读——在这里
+    // 一次性告诉 Wallpaper 该不该算，别让它每帧白烧。面板改设置会走
+    // onPanelChanged 再进这里，所以开关一切换就能同步上。
+    Wallpaper.colorExtraction =
+        s.autoColorFromWallpaper || s.autoForegroundFromWallpaper;
     if (s.material == 'opaque') {
       Wallpaper.stop();
       return;

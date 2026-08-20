@@ -31,6 +31,22 @@ class CardView extends StatelessWidget {
   final bool editing;
   final Widget child;
 
+  /// 卡片内容区四周的留白。插件运行时把"卡片外框尺寸"当成 ctx.size 报给
+  /// JS 之前，必须先扣掉这一圈，否则插件按尺寸算自己的布局时会拿到一个
+  /// 比实际可用空间大一圈的数字，导致内容底部溢出（见 surface.dart 里
+  /// 计算 ctx.size 的地方）。
+  static const EdgeInsets contentPadding = EdgeInsets.fromLTRB(18, 16, 18, 16);
+
+  /// 卡片底色的最终取值。
+  ///
+  /// "莫奈取色"开着时不用用户手选的固定色，改用 [Wallpaper.dominantColor]——
+  /// 实时从当前壁纸算出来的代表色，壁纸一换卡片底色跟着换，观感上更像
+  /// "长在桌面上"而不是一块贴上去的死板色板。取色还没算出来（刚启动那
+  /// 一瞬间）就先兜底用回用户设的固定色，不出现"卡片先黑一下"的闪烁。
+  Color get _baseColor => settings.autoColorFromWallpaper
+      ? (Wallpaper.dominantColor.value ?? Color(settings.cardColor))
+      : Color(settings.cardColor);
+
   /// 底色是否偏亮。决定文字/描边用深色还是浅色，保证可读性。
   ///
   /// **一律看卡片实际贴在屏幕上的颜色，不看主题设置。** 三种材质各自的算法
@@ -48,7 +64,7 @@ class CardView extends StatelessWidget {
   /// 主题设置仍然管着设置窗口和 AI 侧边栏的明暗，只是不再插手卡片。
   bool get _brightBackdrop {
     if (settings.material == 'opaque') {
-      return Color(settings.cardColor).computeLuminance() > 0.5;
+      return _baseColor.computeLuminance() > 0.5;
     }
     if (settings.material == 'mica') {
       // 云母必须看合成之后的颜色，不能直接看 cardColor —— 这正是
@@ -62,7 +78,7 @@ class CardView extends StatelessWidget {
     // 亚克力/毛玻璃：染色是薄薄一层，剩下的全是模糊壁纸透上来的。
     // glassTint 就是这层染色的不透明度，正好当混合权重用。
     final tint = settings.glassTint.clamp(0.0, 1.0);
-    final cardL = Color(settings.cardColor).computeLuminance();
+    final cardL = _baseColor.computeLuminance();
     final blended = cardL * tint + Wallpaper.brightness.value * (1 - tint);
     return blended > 0.5;
   }
@@ -82,7 +98,7 @@ class CardView extends StatelessWidget {
   /// 偏冷的色相才是这材质高级感的来源。色相取 221°，正是改版前那个写死的
   /// 0xFF1C2332 的色相，深色底的观感因此和以前保持一致。
   Color get _micaBase {
-    final hsl = HSLColor.fromColor(Color(settings.cardColor));
+    final hsl = HSLColor.fromColor(_baseColor);
     final neutral = hsl.saturation < 0.02;
     final hue = neutral ? 221.0 : hsl.hue;
     final sat = neutral ? 0.08 : hsl.saturation.clamp(0.0, 0.30);
@@ -108,15 +124,26 @@ class CardView extends StatelessWidget {
   /// 厚度独立于 glassTint —— 那是给亚克力调的，搬过来会让云母要么闷死
   /// 要么白蒙蒙。
   double get _micaAlpha =>
-      HSLColor.fromColor(Color(settings.cardColor)).lightness > 0.5 ? 0.70 : 0.45;
+      HSLColor.fromColor(_baseColor).lightness > 0.5 ? 0.70 : 0.45;
 
   /// 边框与内高光的取色随底色明暗自动翻转：浅色卡片上白色高光是看不见的
   Color get _edge =>
       _brightBackdrop ? const Color(0x14000000) : const Color(0x1FFFFFFF);
 
-  /// 卡片内容的默认前景色：深色底用白字，浅色底用黑字
-  Color get _foreground =>
-      _brightBackdrop ? const Color(0xFF16181C) : const Color(0xFFFFFFFF);
+  /// 卡片内容的默认前景色。
+  ///
+  /// 默认是"深色底用白字，浅色底用黑字"这套二选一。"莫奈取色"的前景色
+  /// 开关打开时改用 Wallpaper.dominantForeground——Material You 算法配好
+  /// 跟 dominantColor 对比度达标的颜色，不再是非黑即白，也可能带一点点
+  /// 壁纸的色相倾向。这个开关跟卡片底色那个开关各自独立，可以只开一个：
+  /// 比如底色还是手选的深灰，但文字想跟着壁纸的色调走。
+  Color get _foreground {
+    if (settings.autoForegroundFromWallpaper) {
+      final c = Wallpaper.dominantForeground.value;
+      if (c != null) return c;
+    }
+    return _brightBackdrop ? const Color(0xFF16181C) : const Color(0xFFFFFFFF);
+  }
 
   /// 卡片填充色。
   ///
@@ -124,7 +151,7 @@ class CardView extends StatelessWidget {
   /// 材质模式：只铺一层薄薄的染色，让 DWM 的模糊透上来。亚克力本身对比度低，
   /// 完全不铺一层的话文字会糊在背景里读不清，所以留一点点。
   Color get _fill {
-    final c = Color(settings.cardColor);
+    final c = _baseColor;
     if (settings.material == 'opaque') return c;
     // 云母：一层由用户底色推导出来的薄色板，alpha 压低让壁纸的色调从下面
     // 透出来（推导规则见 _micaBase / _micaAlpha）。
@@ -138,17 +165,19 @@ class CardView extends StatelessWidget {
     return c.withValues(alpha: settings.glassTint.clamp(0.0, 1.0));
   }
 
-  Color get _topHighlight =>
-      _brightBackdrop ? const Color(0x0A000000) : const Color(0x2EFFFFFF);
-
   @override
   Widget build(BuildContext context) {
-    // 壁纸亮度一变，卡片文字/描边颜色要跟着翻转。
+    // 壁纸亮度一变，卡片文字/描边颜色要跟着翻转；开了"莫奈取色"时，
+    // dominantColor/dominantForeground 也要跟着壁纸实时变——这两个用在
+    // _baseColor/_foreground 里，之前只监听 brightness，色板变了但没有
+    // 单独触发重建，得等下一次因为亮度也凑巧变化才捎带着刷新，观感是
+    // "换壁纸后颜色要过一会儿才跟上"。三个一起监听，颜色和亮度总是同步。
     //
     // 这里**不再**监听 systemBrightness：卡片明暗只由壁纸和材质决定，
     // 系统深浅色切换不该让卡片重建（见 _brightBackdrop 的说明）。
     return AnimatedBuilder(
-      animation: Wallpaper.brightness,
+      animation: Listenable.merge(
+          [Wallpaper.brightness, Wallpaper.dominantColor, Wallpaper.dominantForeground]),
       builder: (context, _) => SizedBox(
         width: width,
         height: height,
@@ -207,51 +236,15 @@ class CardView extends StatelessWidget {
               decoration: BoxDecoration(
                 // 毛玻璃模式下底色只是一层染色，模糊的壁纸在它下面
                 color: _fill,
-                // 一条极淡的顶部内高光 + 整圈细边框。
+                // 整圈细边框，不加任何高光/渐变。
                 // 这不是阴影：阴影要画在卡片外面，而窗口区域正好裁在卡片边界上，
-                // 画了也会被切掉。内高光和边框都在卡片内部，纯扁平手法，
-                // 靠明暗过渡让边缘"立"起来。
+                // 画了也会被切掉，所以边框画在卡片内部。
                 border: Border.all(color: _edge, width: 1),
                 borderRadius: BorderRadius.circular(settings.cardRadius),
               ),
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+              padding: contentPadding,
               child: Stack(
                 children: [
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    top: -16,
-                    height: 1,
-                    child: IgnorePointer(
-                      child: ColoredBox(color: _topHighlight),
-                    ),
-                  ),
-                  // 云母独有的顶部渐变：真 mica 表面就是上面微亮、往下沉。
-                  // 一小条冷白渐变，让"深色板子"不显得死板。
-                  //
-                  // 只画在深色板上：浅色板本来就亮，再盖一层白只会把顶部糊平，
-                  // 那条"上亮下沉"的层次反而没了。浅色板的顶边交给
-                  // _topHighlight（它会翻成淡黑）去交代。
-                  if (settings.material == 'mica' && !_brightBackdrop)
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            borderRadius:
-                                BorderRadius.circular(settings.cardRadius),
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                const Color(0x14FFFFFF),
-                                Colors.transparent,
-                              ],
-                              stops: const [0.0, 0.35],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
                   Positioned.fill(
                     child: DefaultTextStyle(
                       style: TextStyle(

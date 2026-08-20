@@ -299,6 +299,7 @@ class _SidebarHostState extends State<_SidebarHost> {
 
   Future<AiSettings> _readSettings() async {
     try {
+<<<<<<< HEAD
       // 配置文件是 config.json（schema 3 之后）。
       // **不要**读 state.json：那只是迁移用的旧文件，迁移完之后就再也不更新了，
       // 读它会和面板完全脱节——面板改了写 config.json，侧边栏重载还读 state.json，
@@ -307,6 +308,27 @@ class _SidebarHostState extends State<_SidebarHost> {
       if (!await f.exists()) return AiSettings();
       final raw = jsonDecode(await f.readAsString()) as Map<String, Object?>;
       // 主题偏好在 AppSettings 里（settings.theme），AI 配置在 ai 键。
+=======
+      // schema 3 之后主引擎把配置从单个 state.json 拆成了 config.json +
+      // plugindata/（见 store.dart _configFile）。侧边栏一直没跟上，还在
+      // 读 state.json——控制面板改完 Key/模型，侧边栏实际用的还是旧文件
+      // 里那份，两边就脱节了（实测：config.json 里是新 key，state.json
+      // 里是 8 月 14 日的老 key，AI 请求用的恰恰是后者）。
+      //
+      // 这里改成跟主引擎一致：优先 config.json，state.json 只在老版本
+      // 还没迁移时兜底。顺序不能反过来——config.json 存在时旧文件永远
+      // 是死数据，读它就是在读垃圾。
+      final f = File(p.join(_dir, 'config.json'));
+      Map<String, Object?> raw;
+      if (await f.exists()) {
+        raw = jsonDecode(await f.readAsString()) as Map<String, Object?>;
+      } else {
+        final legacy = File(p.join(_dir, 'state.json'));
+        if (!await legacy.exists()) return AiSettings();
+        raw = jsonDecode(await legacy.readAsString()) as Map<String, Object?>;
+      }
+      // 主题偏好在 AppSettings 里（settings.theme），AI 配置在 settings.ai。
+>>>>>>> 773c1c70fdd20f70186fa720ccb0c34d98067517
       // 侧边栏要做深浅色，两个都得读。
       final appSettings =
           (raw['settings'] as Map?)?.cast<String, Object?>() ?? const {};

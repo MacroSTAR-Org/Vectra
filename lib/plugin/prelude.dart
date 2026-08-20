@@ -80,6 +80,13 @@ var lw = (function () {
     if (impl && impl.onResize) impl.onResize(w, h, ctx);
   }
 
+  // "莫奈取色"实时变化时更新 ctx.theme。accent 为 null 表示用户关掉了
+  // 取色开关，插件自己决定怎么兜底（通常是退回写死的颜色）。
+  function __theme(accent) {
+    if (ctx) { ctx.theme = { accent: accent }; }
+    if (impl && impl.onThemeChange) impl.onThemeChange(ctx.theme, ctx);
+  }
+
   function __unmount() {
     if (impl && impl.unmount) { try { impl.unmount(ctx); } catch (e) {} }
     // ctx.onCleanup 登记的收尾函数。定时器宿主会统一回收，但插件登记的**别的**
@@ -197,6 +204,7 @@ var lw = (function () {
     __event: __event,
     __settings: __settings,
     __resize: __resize,
+    __theme: __theme,
     __unmount: __unmount
   };
 })();

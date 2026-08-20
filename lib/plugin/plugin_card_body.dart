@@ -10,6 +10,7 @@ import '../core/logger.dart';
 import '../core/splash_gate.dart';
 import '../model/card.dart';
 import '../store/store.dart';
+import '../ui/wallpaper.dart';
 import 'host.dart';
 import 'node.dart';
 import 'registry.dart';
@@ -66,10 +67,15 @@ class _PluginCardBodyState extends State<PluginCardBody> {
   void initState() {
     super.initState();
     _boot();
+    // 壁纸一变，"莫奈取色"算出来的强调色也跟着变——插件只在 mount 时
+    // 拿过一次初始值，后续得靠这个监听主动推，不然要等下次因为别的原因
+    // 重新挂载（改尺寸/改设置）才会用上新颜色。
+    Wallpaper.dominantColor.addListener(_pushTheme);
   }
 
   @override
   void dispose() {
+    Wallpaper.dominantColor.removeListener(_pushTheme);
     _retryTimer?.cancel();
     _detach(_runtime);
     _runtime?.dispose();
@@ -79,6 +85,36 @@ class _PluginCardBodyState extends State<PluginCardBody> {
   /// 摘掉出错监听。必须赶在 dispose 之前——运行时的 dispose 会把
   /// error 这个 ValueNotifier 一起销毁，之后再动它就是对已释放对象操作。
   void _detach(PluginRuntime? rt) => rt?.error.removeListener(_onRuntimeError);
+
+  void _pushTheme() => _runtime?.notifyTheme(_themeAccentHex());
+
+  /// 只有用户开了"从壁纸取色"或"文字颜色也用取色"其中一个开关，才把
+  /// 算出来的强调色递给插件——两个开关都关着时插件拿到 null，自己退回
+  /// 写死的颜色，不会在用户没选这套风格时突然被强行换色。
+  String? _themeAccentHex() {
+    final s = widget.state.settings;
+    if (!s.autoColorFromWallpaper && !s.autoForegroundFromWallpaper) return null;
+    final c = Wallpaper.dominantColor.value;
+    if (c == null) return null;
+
+    // Material 的 tonalSpot 方案算出来的 primary 饱和度本来就压得低，
+    // 直接把这个颜色当"文字色"画在卡片上时，经常又暗又灰，跟卡片背景
+    // 本身也偏暗撞在一起，糊成一片看不出变化——用户实测反馈"时钟数字
+    // 看着还是白的"就是这个原因。
+    //
+    // 不是重新套用户已经要求撤回的 vibrant 方案（那是换一整套 Material
+    // 取色算法），而是照搬 card_view.dart 里 _micaBase 已经在用的"明度
+    // 推向两极"手法：只保留这个颜色的色相，明度按卡片背景明暗推到能读
+    // 得出来的那一档，饱和度顶一个下限，保证插件拿到的这个颜色不管画
+    // 在深底还是浅底上，都一眼看得出"这是跟着壁纸变的颜色"。
+    final hsl = HSLColor.fromColor(c);
+    final dark = Wallpaper.brightness.value < 0.5;
+    final sat = hsl.saturation.clamp(0.55, 1.0);
+    final lightness = dark ? 0.72 : 0.38;
+    final vivid = HSLColor.fromAHSL(1, hsl.hue, sat, lightness).toColor();
+    final hex = vivid.toARGB32().toRadixString(16).padLeft(8, '0').substring(2);
+    return '#$hex';
+  }
 
   Future<void> _boot() async {
     final loaded = widget.registry[widget.card.pluginId];
@@ -119,6 +155,7 @@ class _PluginCardBodyState extends State<PluginCardBody> {
       h: widget.size.height,
       cols: grid.cols,
       rows: grid.rows,
+      themeAccent: _themeAccentHex(),
     );
 
     if (!mounted) {

@@ -5,7 +5,11 @@ packages:
     dependency: "direct main"
     description:
       name: archive
+<<<<<<< HEAD
       sha256: be169cf6ac481e052c4538715d88841d567150dfe1df38aaec76461a4e7b39f2
+=======
+      sha256: a96e8b390886ee8abb49b7bd3ac8df6f451c621619f52a26e815fdcf568959ff
+>>>>>>> 773c1c70fdd20f70186fa720ccb0c34d98067517
       url: "https://pub.dev"
     source: hosted
     version: "4.1.0"
@@ -85,7 +89,11 @@ packages:
     dependency: transitive
     description:
       name: dbus
+<<<<<<< HEAD
       sha256: a48d5da28e89bd02196e80d81ed8d7954923d00a0f4a68cc20b575038f023383
+=======
+      sha256: "0ce9b0a839e6dee59a37a623d2fc26a35bbbe6404213e419b0d6411023d62645"
+>>>>>>> 773c1c70fdd20f70186fa720ccb0c34d98067517
       url: "https://pub.dev"
     source: hosted
     version: "0.7.15"
@@ -526,7 +534,11 @@ packages:
     dependency: transitive
     description:
       name: vm_service
+<<<<<<< HEAD
       sha256: "5f37239c4851efcef929cea7824e76df7f2f0970aef85d66bbc430afa40e72f0"
+=======
+      sha256: "0016aef94fc66495ac78af5859181e3f3bf2026bd8eecc72b9565601e19ab360"
+>>>>>>> 773c1c70fdd20f70186fa720ccb0c34d98067517
       url: "https://pub.dev"
     source: hosted
     version: "15.3.0"
@@ -550,7 +562,11 @@ packages:
     dependency: transitive
     description:
       name: xml
+<<<<<<< HEAD
       sha256: "67f0aff7be013d107995e9b75bf4e7f2c3ef2dfdb2c8e68024bba0a7fd5756a4"
+=======
+      sha256: "971043b3a0d3da28727e40ed3e0b5d18b742fa5a68665cca88e74b7876d5e025"
+>>>>>>> 773c1c70fdd20f70186fa720ccb0c34d98067517
       url: "https://pub.dev"
     source: hosted
     version: "7.0.1"
