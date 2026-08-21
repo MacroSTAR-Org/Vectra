@@ -189,6 +189,13 @@ var lw = (function () {
           url: url,
           headers: (opts && opts.headers) || null
         });
+      },
+      // 原始文本版：接口返回的不是纯 JSON 时用（JSONP 之类），插件自己解析
+      getText: function (url, opts) {
+        return call('http.getText', {
+          url: url,
+          headers: (opts && opts.headers) || null
+        });
       }
     };
     // 正在播放的媒体（Windows 系统媒体控件）。封面不会以字节形式出现在这里，

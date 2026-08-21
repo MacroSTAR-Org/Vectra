@@ -91,6 +91,10 @@ flutter:
           weight: 700
         - asset: lib/fonts/HarmonyOS_Sans_SC_Black.ttf
           weight: 900
+    # 时钟专用字体：筑紫B丸新英数（圆体），只给时钟插件用
+    - family: TsukushiBMaru
+      fonts:
+        - asset: assets/fonts/tsukushi_b_maru.ttf
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

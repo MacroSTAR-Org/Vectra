@@ -50,7 +50,7 @@ class MarketApp extends StatelessWidget {
           title: 'Vectra 插件市场',
           theme: FluentThemeData(
             brightness: light ? Brightness.light : Brightness.dark,
-            fontFamily: 'HarmonyOS Sans SC',
+            fontFamily: 'TsukushiBMaru',
           ),
           home: _MarketWindow(
             light: light,

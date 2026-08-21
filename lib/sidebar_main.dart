@@ -53,7 +53,7 @@ class _SidebarApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       color: Colors.transparent,
-      theme: ThemeData(fontFamily: 'HarmonyOS Sans SC'),
+      theme: ThemeData(fontFamily: 'TsukushiBMaru'),
       home: const Scaffold(
         backgroundColor: Colors.transparent,
         body: _SidebarHost(),

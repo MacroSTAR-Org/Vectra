@@ -252,7 +252,7 @@ class CardView extends StatelessWidget {
                         fontSize: 13,
                         // 这里的 DefaultTextStyle 是替换式的（不带 merge），会把
                         // 主题里传下来的 fontFamily 冲掉，必须显式带上全局字体
-                        fontFamily: 'HarmonyOS Sans SC',
+                        fontFamily: 'TsukushiBMaru',
                         decoration: TextDecoration.none,
                       ),
                       child: child,

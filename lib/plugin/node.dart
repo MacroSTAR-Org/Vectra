@@ -314,8 +314,17 @@ class _PluginViewState extends State<PluginView> {
         fontSize: _num(n['size']) ?? 13,
         height: _num(n['lh']),
         fontWeight: w == null ? null : _weight(w),
+        // font 字段：插件想换字体时显式指定 family（比如时钟用圆体数字）。
+        // 不传就继承卡片默认字体（全局字体，见 card_view），老插件行为不变。
+        fontFamily: _str(n['font']),
         color: (_color(n['color']) ?? _fg)
             .withValues(alpha: _num(n['opacity']) ?? 1.0),
+        // glow 字段：文字辉光（霓虹效果）。给颜色就发光，sigma 控制光晕
+        // 半径（默认 8）。两层 shadow 叠加——内层实、外层虚，做出光晕
+        // 渐变而不是一圈生硬的描边。歌词插件用它在"正在唱"那一行上。
+        shadows: n['glow'] == null
+            ? null
+            : _glow(_color(n['glow']) ?? _fg, _num(n['glowSigma']) ?? 8),
         fontFeatures: n['mono'] == true
             ? const [FontFeature.tabularFigures()]
             : null,
@@ -324,6 +333,21 @@ class _PluginViewState extends State<PluginView> {
             : TextDecoration.none,
       ),
     );
+  }
+
+  /// 两层 shadow 做"贴着笔画"的辉光。
+  ///
+  /// 之前犯过的错：三层 + 5 倍半径的扩散光，光晕从笔画向外铺几十像素，
+  /// 整行文字的区域都被照亮，看起来是"这一行整体加亮"而不是"字在发光"。
+  /// 发光感来自"光紧贴轮廓、快速衰减"——内层（0.6x）几乎是描边级的实光，
+  /// 外层（1.8x）才是光晕，再往外就没有了。sigma 由调用方按字号给，
+  /// 大字给 8~10、小字给 4~5，让光晕半径始终小于字间距。
+  List<Shadow> _glow(Color color, double sigma) {
+    final base = color.withValues(alpha: (color.a * 0.9).clamp(0.0, 1.0));
+    return [
+      Shadow(color: base, blurRadius: sigma * 0.6),
+      Shadow(color: base.withValues(alpha: base.a * 0.45), blurRadius: sigma * 1.8),
+    ];
   }
 
   FontWeight _weight(int w) {
