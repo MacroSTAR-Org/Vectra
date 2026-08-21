@@ -20,6 +20,7 @@ import 'package:flutter_js/flutter_js.dart';
 import '../core/logger.dart';
 import 'manifest.dart';
 import 'prelude.dart';
+import 'sdk.dart';
 
 typedef HostCall = Future<Object?> Function(String method, Map<String, Object?> args);
 
@@ -29,6 +30,9 @@ class PluginRuntime {
     required this.source,
     required this.instanceId,
     required this.host,
+    this.sdk,
+    this.appVersion = '',
+    this.pluginDir = '',
   });
 
   final PluginManifest manifest;
@@ -37,6 +41,15 @@ class PluginRuntime {
 
   /// 宿主能力（storage / http / 面板等）由外部注入，运行时本身不碰 IO
   final HostCall host;
+
+  /// 本插件的 SDK 对象（可选，由 PluginCardBody 注入）
+  PluginSdk? sdk;
+
+  /// 应用版本号（传给插件的 onLoad / ctx.appVersion）
+  String appVersion = '';
+
+  /// 插件目录路径（传给插件的 onLoad / ctx.pluginDir）
+  String pluginDir = '';
 
   JavascriptRuntime? _rt;
   final Map<String, Timer> _timers = {};
@@ -94,10 +107,9 @@ class PluginRuntime {
         'settings': settings,
         'size': {'w': w, 'h': h},
         'grid': {'cols': cols, 'rows': rows},
-        // themeAccent 为 null 表示用户没开"莫奈取色"，插件自己兜底一个
-        // 写死的颜色；非 null 时是从壁纸实时算出来的强调色，见
-        // plugin_card_body.dart 里对 Wallpaper.dominantColor 的监听。
         'theme': {'accent': themeAccent},
+        'appVersion': appVersion,
+        'pluginDir': pluginDir,
       });
       _guard(() => rt.evaluate('lw.__mount($ctx);'));
       _pump();
@@ -260,6 +272,7 @@ class PluginRuntime {
     _timers.clear();
     _rt?.dispose();
     _rt = null;
+    sdk?.dispose();
     tree.dispose();
     error.dispose();
   }

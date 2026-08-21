@@ -16,7 +16,9 @@ import '../model/settings.dart';
 import '../plugin/host.dart';
 import '../plugin/manifest.dart';
 import '../plugin/node.dart';
+import '../plugin/registry.dart';
 import '../plugin/runtime.dart';
+import '../plugin/sdk.dart';
 import '../store/store.dart';
 
 class PluginPreview extends StatefulWidget {
@@ -69,6 +71,7 @@ class _PluginPreviewState extends State<PluginPreview> {
         y: 0,
         size: widget.manifest.defaultSize,
         z: 0);
+    final previewRegistry = PluginRegistry(Directory.systemTemp.path);
     final host = PluginHost(
       store: store,
       state: state,
@@ -76,6 +79,8 @@ class _PluginPreviewState extends State<PluginPreview> {
       pluginId: widget.manifest.id,
       onRequestSize: (_) {},
       onOpenSettings: () {},
+      registry: previewRegistry,
+      sdk: PluginSdk(pluginId: widget.manifest.id, registry: previewRegistry),
     );
 
     final rt = PluginRuntime(
