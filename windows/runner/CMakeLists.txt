@@ -67,7 +67,8 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 # RegisterDragDrop/OleInitialize 在 ole32，DragQueryFile 在 shell32
-target_link_libraries(${BINARY_NAME} PRIVATE "ole32.lib" "shell32.lib")
+  target_link_libraries(${BINARY_NAME} PRIVATE "ole32.lib" "shell32.lib")
+  target_link_libraries(${BINARY_NAME} PRIVATE "comdlg32.lib")
 # C++/WinRT 的运行时（RoGetActivationFactory 等）在 windowsapp.lib
 target_link_libraries(${BINARY_NAME} PRIVATE "windowsapp.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")

@@ -109,6 +109,9 @@ class PluginHost {
       case 'openExternal':
         return _openExternal(args['url'] as String? ?? '');
 
+      case 'pickFile':
+        return _pickFile(args);
+
       default:
         // ---- SDK 注册消息 ----
         if (method.startsWith('__sdk.')) {
@@ -238,6 +241,21 @@ class PluginHost {
       Log.w('plugin',
           '$pluginId 请求失败 $target（${sw.elapsedMilliseconds}ms）: $e');
       return {'ok': false, 'error': '请求失败：${uri.host}'};
+    }
+  }
+
+  /// 系统文件选择对话框。
+  Future<Map<String, Object?>> _pickFile(Map<String, Object?> args) async {
+    final title = args['title'] as String? ?? '选择文件';
+    final ext = (args['ext'] as List?)?.cast<String>() ?? const [];
+    try {
+      final path = await NativeBridge.pickFile(title: title, ext: ext);
+      if (path == null || path.isEmpty) {
+        return {'ok': false, 'cancelled': true};
+      }
+      return {'ok': true, 'path': path};
+    } catch (e) {
+      return {'ok': false, 'error': '$e'};
     }
   }
 

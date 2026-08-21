@@ -215,6 +215,7 @@ var lw = (function () {
     ctx.openSettings = function () { post({ method: 'openSettings' }); };
     ctx.toast = function (m) { post({ method: 'toast', args: { message: String(m) } }); };
     ctx.openExternal = function (u) { post({ method: 'openExternal', args: { url: String(u) } }); };
+    ctx.pickFile = function (opts) { return call('pickFile', opts || {}); };
     ctx.sdk = sdk;
 
     // onLoad：比 mount 更早的时机，让插件注册扩展点

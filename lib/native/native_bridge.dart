@@ -129,6 +129,18 @@ class NativeBridge {
   static Future<void> openLogDir(String dir) =>
       _channel.invokeMethod<void>('openLogDir', dir);
 
+  /// 打开系统文件选择对话框，返回选中的文件路径。
+  /// [filter] 是过滤器描述，如 "可执行文件"；[ext] 是扩展名列表，如 ["exe","lnk"]。
+  /// 用户取消时返回 null。
+  static Future<String?> pickFile({
+    String title = '选择文件',
+    List<String> ext = const [],
+  }) async =>
+      _channel.invokeMethod<String>('pickFile', {
+        'title': title,
+        'ext': ext,
+      });
+
   /// 当前所有显示器的物理矩形 + 设备名。多显示器适配用。
   static Future<List<MonitorRect>> getMonitors() async {
     final list =

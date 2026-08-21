@@ -1,5 +1,5 @@
 // launcher - 快捷启动器
-// 展示 SDK：onLoad + lifecycle.on + widget.register + storage 持久化
+// 展示 SDK：onLoad + lifecycle.on + widget.register + storage 持久化 + pickFile
 lw.register({
   onLoad: function (api) {
     api.sdk.widget.register({
@@ -14,7 +14,6 @@ lw.register({
 
   mount: function (ctx) {
     var list = [];
-    var inputVal = '';
     var cols = Math.max(1, ctx.grid.cols);
 
     function save() {
@@ -43,6 +42,7 @@ lw.register({
         })(i);
       }
 
+      // 添加按钮
       children.push({
         t: 'tap', id: 'add', child: {
           t: 'col', main: 'center', cross: 'center', children: [
@@ -56,42 +56,42 @@ lw.register({
       ctx.render({
         t: 'box', pad: 12, child: {
           t: 'col', gap: 8, children: [
-            { t: 'grid', cols: cols, gap: 8, children: children },
-            {
-              t: 'input', id: 'path-input', value: inputVal,
-              placeholder: '输入路径后回车添加（如 D:\\app\\note.exe）',
-              submit: 'submit-path'
-            }
+            { t: 'grid', cols: cols, gap: 8, children: children }
           ]
         }
       });
     }
 
     // ---- 事件 ----
-    var hSubmit = ctx.on(function (e) {
-      if (e.id === 'submit-path' && e.value && e.value.trim()) {
-        var parts = e.value.trim().split(/[\\/]/);
-        var fileName = parts[parts.length - 1] || e.value.trim();
-        var name = fileName.replace(/\.(exe|lnk|bat|cmd|ps1|msc)$/i, '');
-        list.push({ name: name, path: e.value.trim() });
-        save();
-        inputVal = '';
-        render();
-      }
-    });
+    var hTap = ctx.on(function (e) {
+      if (!e.id) return;
 
-    var hLaunch = ctx.on(function (e) {
-      if (e.id && e.id.indexOf('launch:') === 0) {
+      // 启动应用
+      if (e.id.indexOf('launch:') === 0) {
         var idx = parseInt(e.id.split(':')[1]);
         if (idx >= 0 && idx < list.length) {
           ctx.openExternal(list[idx].path);
         }
+        return;
       }
-    });
 
-    var hAdd = ctx.on(function (e) {
+      // 添加快捷方式：打开文件选择器
       if (e.id === 'add') {
-        // 点击添加：把焦点给输入框（用户直接打字即可）
+        ctx.pickFile({
+          title: '选择要添加的程序',
+          ext: ['exe', 'lnk', 'bat', 'cmd', 'msc']
+        }).then(function (res) {
+          if (res && res.ok && res.path) {
+            // 从路径提取文件名（去掉扩展名）
+            var parts = res.path.replace(/\\/g, '/').split('/');
+            var fileName = parts[parts.length - 1] || res.path;
+            var name = fileName.replace(/\.(exe|lnk|bat|cmd|msc|ps1)$/i, '');
+            list.push({ name: name, path: res.path });
+            save();
+            render();
+          }
+        });
+        return;
       }
     });
 

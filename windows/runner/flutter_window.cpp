@@ -58,6 +58,19 @@ std::wstring Utf8ToWide(const std::string& utf8) {
   return out;
 }
 
+// Win32 W 版 API 返回的 UTF-16 转回 UTF-8。
+std::string WideToUtf8(const wchar_t* wstr) {
+  if (!wstr || wcslen(wstr) == 0) return std::string();
+  const int n = ::WideCharToMultiByte(CP_UTF8, 0, wstr,
+                                      static_cast<int>(wcslen(wstr)),
+                                      nullptr, 0, nullptr, nullptr);
+  if (n <= 0) return std::string();
+  std::string out(static_cast<size_t>(n), '\0');
+  ::WideCharToMultiByte(CP_UTF8, 0, wstr, static_cast<int>(wcslen(wstr)),
+                        out.data(), n, nullptr, nullptr);
+  return out;
+}
+
 // 读 Run 键里登记的命令行；没有则返回空串。
 std::wstring ReadRunValue() {
   HKEY key = nullptr;
@@ -517,6 +530,73 @@ void HandleMethodCall(
     ::ShellExecuteW(nullptr, L"open", wdir.c_str(), nullptr, nullptr,
                     SW_SHOWNORMAL);
     result->Success();
+    return;
+  }
+
+  // 系统文件选择对话框。传入 {title, ext}，返回选中的文件路径（string）。
+  // 用户取消时返回 null（Flutter 侧拿到 null）。
+  if (call.method_name() == "pickFile") {
+    const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+    std::wstring title = L"选择文件";
+    std::vector<std::wstring> exts;
+    if (args) {
+      auto it = args->find(flutter::EncodableValue("title"));
+      if (it != args->end()) {
+        const auto* t = std::get_if<std::string>(&it->second);
+        if (t && !t->empty()) title = Utf8ToWide(*t);
+      }
+      it = args->find(flutter::EncodableValue("ext"));
+      if (it != args->end()) {
+        const auto* ext_list = std::get_if<flutter::EncodableList>(&it->second);
+        if (ext_list) {
+          for (const auto& e : *ext_list) {
+            const auto* s = std::get_if<std::string>(&e);
+            if (s && !s->empty()) exts.push_back(Utf8ToWide(*s));
+          }
+        }
+      }
+    }
+
+    // 构建过滤器：所有文件\0*.*\0可执行文件\0*.exe;*.lnk\0\0
+    // 按要求的扩展名构建
+    std::wstring filter_all = L"所有文件";
+    filter_all.push_back(L'\0'); filter_all += L"*.*";
+    filter_all.push_back(L'\0');
+    if (!exts.empty()) {
+      std::wstring filter_ext;
+      for (size_t i = 0; i < exts.size(); ++i) {
+        if (i > 0) filter_ext += L';';
+        filter_ext += L"*.";
+        filter_ext += exts[i];
+      }
+      // 加一个"指定类型"过滤器
+      filter_all += L"指定类型";
+      filter_all.push_back(L'\0');
+      filter_all += filter_ext;
+      filter_all.push_back(L'\0');
+    }
+    filter_all.push_back(L'\0');  // 双 \0 结尾
+
+    // 拷贝到 mutable buffer（GetOpenFileNameW 要求可写的 buffer）
+    std::vector<wchar_t> filter_buf(filter_all.begin(), filter_all.end());
+    filter_buf.push_back(L'\0');
+
+    wchar_t file_buf[MAX_PATH] = {};
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter = filter_buf.data();
+    ofn.lpstrFile = file_buf;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrTitle = title.c_str();
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if (::GetOpenFileNameW(&ofn)) {
+      result->Success(flutter::EncodableValue(WideToUtf8(file_buf)));
+    } else {
+      // 用户取消或出错
+      result->Success(flutter::EncodableValue(std::string()));
+    }
     return;
   }
 
