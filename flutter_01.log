@@ -1,0 +1,88 @@
+Flutter crash report.
+Please report a bug at https://github.com/flutter/flutter/issues.
+
+## command
+
+flutter build windows --release --no-pub
+
+## exception
+
+FormatException: FormatException: Unexpected character (at character 1)
+<<<<<<< HEAD
+^
+
+
+```
+#0      _ChunkedJsonParser.fail (dart:convert-patch/convert_patch.dart:1467:5)
+#1      _ChunkedJsonParser.parseNumber (dart:convert-patch/convert_patch.dart:1333:9)
+#2      _ChunkedJsonParser.parse (dart:convert-patch/convert_patch.dart:935:22)
+#3      _parseJson (dart:convert-patch/convert_patch.dart:35:10)
+#4      JsonDecoder.convert (dart:convert/json.dart:640:36)
+#5      JsonCodec.decode (dart:convert/json.dart:219:41)
+#6      createPluginSymlinks (package:flutter_tools/src/flutter_plugins.dart:1110:29)
+#7      buildWindows (package:flutter_tools/src/windows/build_windows.dart:82:3)
+<asynchronous suspension>
+#8      BuildWindowsCommand.runCommand (package:flutter_tools/src/commands/build_windows.dart:72:5)
+<asynchronous suspension>
+#9      FlutterCommand.run.<anonymous closure> (package:flutter_tools/src/runner/flutter_command.dart:1630:27)
+<asynchronous suspension>
+#10     AppContext.run.<anonymous closure> (package:flutter_tools/src/base/context.dart:154:19)
+<asynchronous suspension>
+#11     CommandRunner.runCommand (package:args/command_runner.dart:212:13)
+<asynchronous suspension>
+#12     FlutterCommandRunner.runCommand.<anonymous closure> (package:flutter_tools/src/runner/flutter_command_runner.dart:496:9)
+<asynchronous suspension>
+#13     AppContext.run.<anonymous closure> (package:flutter_tools/src/base/context.dart:154:19)
+<asynchronous suspension>
+#14     FlutterCommandRunner.runCommand (package:flutter_tools/src/runner/flutter_command_runner.dart:431:5)
+<asynchronous suspension>
+#15     FlutterCommandRunner.run.<anonymous closure> (package:flutter_tools/src/runner/flutter_command_runner.dart:307:33)
+<asynchronous suspension>
+#16     run.<anonymous closure>.<anonymous closure> (package:flutter_tools/runner.dart:104:11)
+<asynchronous suspension>
+#17     AppContext.run.<anonymous closure> (package:flutter_tools/src/base/context.dart:154:19)
+<asynchronous suspension>
+#18     main (package:flutter_tools/executable.dart:103:3)
+<asynchronous suspension>
+```
+
+## flutter doctor
+
+```
+[✓] Flutter (Channel stable, 3.44.9, on Microsoft Windows [版本 10.0.19045.6937], locale zh-CN) [510ms]
+    • Flutter version 3.44.9 on channel stable at C:\flutter
+    • Upstream repository https://github.com/flutter/flutter.git
+    • Framework revision 6b182d2c75 (2 weeks ago), 2026-08-05 10:04:07 -0700
+    • Engine revision 5a2a6a42cc
+    • Dart version 3.12.2
+    • DevTools version 2.57.0
+    • Feature flags: enable-web, enable-linux-desktop, enable-macos-desktop, enable-windows-desktop, enable-android, enable-ios, cli-animations, enable-native-assets, enable-swift-package-manager, omit-legacy-version-file, enable-lldb-debugging, enable-uiscene-migration
+
+[✓] Windows Version (10 IoT 企业版 LTSC 64-bit, 22H2, 2009) [1,318ms]
+
+[✗] Android toolchain - develop for Android devices [239ms]
+    • Android SDK at D:\scrcpy-win64-v4.1
+    • Emulator version unknown
+    ✗ cmdline-tools component is missing.
+      Try installing or updating Android Studio.
+      Alternatively, download the tools from https://developer.android.com/studio#command-line-tools-only and make sure to set the ANDROID_HOME environment variable.
+      See https://developer.android.com/studio/command-line for more details.
+
+[✓] Chrome - develop for the web [224ms]
+    • Chrome at C:\Program Files\Google\Chrome\Application\chrome.exe
+
+[✓] Visual Studio - develop Windows apps (Visual Studio Community 2026 18.8.3) [222ms]
+    • Visual Studio at D:\VisualStudio
+    • Visual Studio Community 2026 version 18.8.12105.206
+    • Windows 10 SDK version 10.0.26100.0
+
+[✓] Connected device (3 available) [414ms]
+    • Windows (desktop) • windows • windows-x64    • Microsoft Windows [版本 10.0.19045.6937]
+    • Chrome (web)      • chrome  • web-javascript • Google Chrome 151.0.7922.170
+    • Edge (web)        • edge    • web-javascript • Microsoft Edge 149.0.4022.52
+
+[!] Network resources [23.2s]
+    ✗ A network error occurred while checking "https://maven.google.com/": 信号灯超时时间已到
+
+! Doctor found issues in 2 categories.
+```

@@ -57,7 +57,10 @@ class SplashGate {
     _push(0, total);
     _fallback = Timer(fallbackDelay, () {
       if (_done) return;
-      Log.w('splash',
+      // 超时意味着有卡片没能 reportReady——要么插件死循环（_guard 挡住了
+      // 第一次但后续没报），要么 PluginCardBody._boot 卡住了。正常不该走到
+      // 这里，走到就是有东西坏了。
+      Log.e('splash',
           '等待卡片就绪超时（${_reported.length}/$_total），先收幕布');
       finish();
     });

@@ -18,6 +18,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -114,6 +115,22 @@ class MarketPlugin {
       updatedAt: str('updatedAt'),
     );
   }
+
+  /// 序列化成缓存用的 JSON（round-trip 到 [tryParse]）。
+  /// 离线缓存详情用：把 readme 存下来，断网时详情页也能看。
+  Map<String, Object?> toCacheJson() => {
+        'id': id,
+        'name': name,
+        'version': version,
+        'downloadUrl': downloadUrl,
+        'description': description,
+        'author': author,
+        'icon': icon,
+        'sizes': sizes,
+        if (sha256 != null) 'sha256': sha256,
+        if (readme != null) 'readme': readme,
+        if (updatedAt != null) 'updatedAt': updatedAt,
+      };
 }
 
 /// 目录响应 -> 插件列表。坏记录直接跳过，能显示几条是几条。
@@ -242,8 +259,36 @@ class MarketClient {
     return one;
   }
 
-  Future<Object?> _getJson(String url) async {
-    final uri = Uri.tryParse(url);
+  /// 插件图标二进制（PNG/SVG）。失败返回 null——图标挂了不该让列表页炸。
+  ///
+  /// 完整版协议的图标端点是 `BASE/api/{product}/plugins/{id}/resources/icon`，
+  /// product 固定用 vectra（我们是 Vectra 客户端）。v1 协议只给字符图标，
+  /// 真图标只有这一条路。
+  Future<Uint8List?> icon(String id) async {
+    if (!isSafePluginId(id)) return null;
+    final uri = Uri.tryParse('$baseUrl/api/vectra/plugins/$id/resources/icon');
+    if (uri == null) return null;
+    final sw = Stopwatch()..start();
+    try {
+      final res = await _client.get(uri, headers: _headers).timeout(_timeout);
+      sw.stop();
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        Log.d('market',
+            '图标返回 ${res.statusCode} $id（${sw.elapsedMilliseconds}ms）');
+        return null;
+      }
+      final bytes = res.bodyBytes;
+      if (bytes.isEmpty) return null;
+      Log.d('market', '图标下载成功 $id ${bytes.length}B（${sw.elapsedMilliseconds}ms）');
+      return Uint8List.fromList(bytes);
+    } catch (e) {
+      sw.stop();
+      Log.d('market', '图标下载失败 $id: $e');
+      return null;
+    }
+  }
+
+  Future<Object?> _getJson(String url) async {    final uri = Uri.tryParse(url);
     if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
       throw MarketException('市场地址不合法');
     }
@@ -286,8 +331,6 @@ class MarketClient {
   }
 
   /// 下载插件包。[onProgress] 回报"已收到/总字节"，总字节未知时给 0。
-  ///
-  /// 用流式请求而不是 http.get：进度条要的是过程，get 只有结果。
   Future<Uint8List> download(
     String url, {
     void Function(int received, int total)? onProgress,
@@ -662,6 +705,45 @@ String? marketAutoOpenId;
 /// `--market-uninstall=<id>`：直接执行卸载（跳过确认框）。
 /// 确认框留给真实用户；这里要自动验的是"删卡片 + 删目录 + 重扫"那段逻辑。
 String? marketAutoUninstallId;
+
+// ---------------- 可更新插件 ----------------
+
+/// 有新版本的插件：id -> 市场上的版本号。
+///
+/// 启动时静默查一次目录填进来，组件库页据此标"可更新"。做成全局的而不是
+/// 挂在某个 widget 上：查更新在 main() 里发起（那时还没有 widget），
+/// 而要用它的是设置面板——两者没有父子关系。
+final ValueNotifier<Map<String, String>> pluginUpdates =
+    ValueNotifier<Map<String, String>>(const {});
+
+/// 静默查一次哪些已装插件有新版。失败就当没有，不打扰用户。
+///
+/// [installed] 是本地已装的插件（id -> 版本号）。只查第三方插件——内置的
+/// 跟着程序走，市场上那份同名条目不该拿来盖掉它。
+Future<void> checkPluginUpdates({
+  required Map<String, String> installed,
+  required String baseUrl,
+}) async {
+  if (installed.isEmpty) return;
+  try {
+    final client = makeMarketClient(baseUrl);
+    final catalog = await client.catalog();
+    final updates = <String, String>{};
+    for (final m in catalog) {
+      final local = installed[m.id];
+      if (local != null && local != m.version) updates[m.id] = m.version;
+    }
+    pluginUpdates.value = updates;
+    if (updates.isNotEmpty) {
+      Log.i('market',
+          '有 ${updates.length} 个插件可更新: ${updates.keys.join(", ")}');
+    }
+  } catch (e) {
+    // 查更新失败不该有任何用户可见的后果——连不上市场是常态（离线、
+    // 服务器维护），标记保持为空就是了
+    Log.d('market', '检查更新失败: $e');
+  }
+}
 
 /// 按当前设置挑一个市场客户端。
 ///

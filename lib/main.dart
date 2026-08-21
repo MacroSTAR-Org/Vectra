@@ -8,10 +8,14 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import 'dart:async' show runZonedGuarded;
+
 import 'core/app_version.dart';
 import 'core/logger.dart';
 import 'core/marketplace.dart' show marketMockEnabled, marketAutoInstallId, marketAutoOpenId, marketAutoUninstallId;
 import 'core/paths.dart';
+import 'core/sentry.dart' as sentry;
+import 'core/sentry_reporter.dart' show wireSentryReporter;
 import 'core/splash_gate.dart';
 import 'model/card.dart';
 import 'native/native_bridge.dart';
@@ -102,21 +106,65 @@ Future<void> main(List<String> args) async {
     await store.saveNow(state);
   }
 
+  // --test-sentry：主动抛一条错误，验证 Better Stack 能收到。
+  if (args.contains('--test-sentry')) {
+    Log.e('app', '这是一条测试错误（--test-sentry），用来验证 Better Stack 上报');
+  }
+
+  // --no-sentry：本地开发时不想把数据灌进 Better Stack 就加这个参数
+  if (args.contains('--no-sentry')) {
+    sentry.disableSentry();
+  }
+
+  // 把 logger 的 Log.e 接到 sentry：init 之后、app 跑之前
+  wireSentryReporter();
+
   // 启动幕布的进度以"卡片张数"计，得在播种默认布局之后才拍这个快照
   SplashGate.start(state.cards.length);
+
+  // Sentry 先初始化（要 await 完毕），再跑 app。
+  // 不能用 appRunner 模式：runWidget 不返回（跑消息循环），会导致
+  // SentryFlutter.init 的 await 永远不完成、SDK 初始化收尾跑不完。
+  try {
+    await sentry.initSentry();
+  } catch (e) {
+    // Sentry 自己起不来不该连累整个程序——记下来，后面照样跑
+    Log.e('app', 'Sentry 初始化失败（错误上报不可用）: $e');
+  }
+
+  // --test-sentry 的异常在 init 之后发，确保 SDK 已经就绪
+  if (args.contains('--test-sentry')) {
+    try {
+      throw StateError('sentry connectivity test from Vectra $appVersion');
+    } catch (e, st) {
+      await sentry.reportExceptionToSentry(e, st);
+    }
+    Log.i('app', '--test-sentry 已发出，检查 Better Stack 面板');
+  }
 
   // runWidget 而不是 runApp：这个进程要开两个窗口——覆盖整个虚拟屏幕的磁贴层，
   // 和任务栏里那个独立的设置窗口。两个窗口共用**同一个引擎、同一个 isolate**，
   // 控制面板因此还能直接改 AppState 里的对象（缘由见 panel_window.h 顶部）。
   // runApp 只认一个隐式视图，多视图必须走 runWidget + ViewCollection。
-  runWidget(_MultiViewRoot(
-    state: state,
-    store: store,
-    registry: registry,
-    openPanel: args.contains('--panel'),
-    openMarket: args.contains('--market'),
-    openAi: args.contains('--ai'),
-  ));
+  //
+  // runZonedGuarded 补的是"异步 Future 没被 await 而抛的异常"——那条缝
+  // FlutterError（Sentry 装的 onError 钩子）抓不到。
+  runZonedGuarded(
+    () {
+      runWidget(_MultiViewRoot(
+        state: state,
+        store: store,
+        registry: registry,
+        openPanel: args.contains('--panel'),
+        openMarket: args.contains('--market'),
+        openAi: args.contains('--ai'),
+      ));
+    },
+    (error, stack) {
+      Log.e('app', '未捕获异常: $error', stack);
+      sentry.reportExceptionToSentry(error, stack);
+    },
+  );
 }
 
 /// 两个视图的根：隐式视图画桌面磁贴，第二个视图画设置窗口。

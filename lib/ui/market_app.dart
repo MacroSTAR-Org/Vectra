@@ -5,6 +5,9 @@
 /// 直接让 AppRoot 重扫一遍，桌面立刻就能用，不需要重启，也不需要跨进程通知。
 library;
 
+import 'dart:convert' show base64Decode, base64Encode;
+import 'dart:typed_data' show Uint8List;
+
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/material.dart' as m;
 
@@ -52,6 +55,7 @@ class MarketApp extends StatelessWidget {
           home: _MarketWindow(
             light: light,
             state: state,
+            store: store,
             registry: registry,
             appKey: appKey,
           ),
@@ -65,12 +69,14 @@ class _MarketWindow extends StatefulWidget {
   const _MarketWindow({
     required this.light,
     required this.state,
+    required this.store,
     required this.registry,
     required this.appKey,
   });
 
   final bool light;
   final AppState state;
+  final Store store;
   final PluginRegistry registry;
   final GlobalKey<AppRootState> appKey;
 
@@ -100,6 +106,12 @@ class _MarketWindowState extends State<_MarketWindow> {
   final Map<String, MarketPlugin> _details = {};
   bool _detailLoading = false;
   String? _detailError;
+
+  /// 插件真图标的字节。空数组表示"拿过了但没有"，用来避免反复重试。
+  final Map<String, Uint8List> _icons = {};
+
+  /// 正在拉图标的 id，防止同一个 id 并发发好几次请求
+  final Set<String> _iconPending = {};
 
   @override
   void initState() {
@@ -200,7 +212,10 @@ class _MarketWindowState extends State<_MarketWindow> {
       _toast('${p.name}：${e.message}');
     } catch (e) {
       if (!mounted) return;
-      Log.w('market', '安装 ${p.id} 失败: $e');
+      // MarketException 是"能预料到的"失败（坏 zip、路径不合法），
+      // 这条 catch 兜的是"预料不到的"——磁盘满、权限拒绝、文件锁。
+      // 那些是该看到的问题，上报。
+      Log.e('market', '安装 ${p.id} 失败: $e');
       setState(() => _installing.remove(p.id));
       _toast('${p.name}：安装失败');
     }
@@ -216,19 +231,104 @@ class _MarketWindowState extends State<_MarketWindow> {
     if (_details.containsKey(p.id)) return;
     try {
       final full = await _client.detail(p.id);
+      // 拉到就写离线缓存：断网时详情页还能看（README 也在里面）
+      try {
+        await widget.store
+            .cacheSet('marketplace', 'detail:${p.id}', full.toCacheJson());
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _details[p.id] = full;
         _detailLoading = false;
       });
     } on MarketException catch (e) {
+      // 网络失败：先看有没有离线缓存
+      final cached = await _cachedDetail(p);
       if (!mounted) return;
-      // 详情拉不到不该让人卡在空页面上：目录里那份信息还能用，
-      // 只是没有 README
+      if (cached != null) {
+        setState(() {
+          _details[p.id] = cached;
+          _detailLoading = false;
+          _detailError = '离线显示（上次缓存的版本，可能不是最新）';
+        });
+        return;
+      }
+      // 没缓存也只能退回目录里那份信息了——只是没有 README
       setState(() {
         _detailError = e.message;
         _detailLoading = false;
       });
+    }
+  }
+
+  // ---------------- 真图标 ----------------
+
+  /// 插件图标。
+  ///
+  /// v1 协议只给字形字符（用文件图标的插件给占位 ▢），真图标要单独去
+  /// 完整版协议那条 /resources/icon 拿。拿到之前、以及拿不到时，都显示
+  /// 字符——那本来就是服务器给的兜底，不是"加载失败"的替代品。
+  Widget _realIcon(MarketPlugin p, {double size = 20, double box = 42}) {
+    final bytes = _icons[p.id];
+    if (bytes != null && bytes.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(box * 0.2),
+        child: Image.memory(
+          bytes,
+          width: box * 0.78,
+          height: box * 0.78,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.medium,
+          // 服务器给的图标解不出来（SVG、损坏）就退回字符，不留空
+          errorBuilder: (_, _, _) =>
+              Text(p.icon, style: TextStyle(fontSize: size)),
+        ),
+      );
+    }
+    // 还没拿到就先排队去拿（每个 id 只发一次）
+    _fetchIcon(p.id);
+    return Text(p.icon, style: TextStyle(fontSize: size));
+  }
+
+  /// 拉一个插件的真图标。失败就记在 _icons 里存空，避免反复重试。
+  Future<void> _fetchIcon(String id) async {
+    if (_icons.containsKey(id) || _iconPending.contains(id)) return;
+    _iconPending.add(id);
+    try {
+      // 先看磁盘缓存：图标基本不变，没必要每次开市场都重下
+      final cached = await widget.store.cacheGet('marketplace', 'icon:$id');
+      if (cached is String && cached.isNotEmpty) {
+        final bytes = base64Decode(cached);
+        if (mounted) setState(() => _icons[id] = bytes);
+        return;
+      }
+      final bytes = await _client.icon(id);
+      if (bytes != null && bytes.isNotEmpty) {
+        try {
+          await widget.store
+              .cacheSet('marketplace', 'icon:$id', base64Encode(bytes));
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      // 拿不到也要记一笔空的：否则每次重建都会再发一次请求
+      setState(() => _icons[id] = bytes ?? Uint8List(0));
+    } catch (_) {
+      if (mounted) setState(() => _icons[id] = Uint8List(0));
+    } finally {
+      _iconPending.remove(id);
+    }
+  }
+
+  /// 读离线缓存里的详情。没有或已损坏返回 null。
+  Future<MarketPlugin?> _cachedDetail(MarketPlugin listed) async {
+    try {
+      final raw = await widget.store.cacheGet('marketplace', 'detail:${listed.id}');
+      final p = MarketPlugin.tryParse(raw);
+      if (p == null) return null;
+      // 版本对不上就别拿旧详情冒充：列表已经是新的，说明市场更新了
+      return p.version == listed.version ? p : null;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -516,7 +616,7 @@ class _MarketWindowState extends State<_MarketWindow> {
                           : const Color(0x14FFFFFF),
                       borderRadius: BorderRadius.circular(9),
                     ),
-                    child: Text(p.icon, style: const TextStyle(fontSize: 20)),
+                    child: _realIcon(p),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -656,7 +756,7 @@ class _MarketWindowState extends State<_MarketWindow> {
                 widget.light ? const Color(0x0D000000) : const Color(0x14FFFFFF),
             borderRadius: BorderRadius.circular(14),
           ),
-          child: Text(p.icon, style: const TextStyle(fontSize: 30)),
+          child: _realIcon(p, size: 30, box: 64),
         ),
         const SizedBox(width: 16),
         Expanded(

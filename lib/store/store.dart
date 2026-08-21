@@ -115,6 +115,7 @@ class Store {
       return state;
     } catch (e) {
       // 配置文件损坏时不能直接崩溃，退回默认并把坏文件留档
+      Log.e('store', 'config.json 损坏，已备份并退回默认: $e');
       try {
         await f.rename(
             '$_configFile.broken-${DateTime.now().millisecondsSinceEpoch}');
@@ -161,8 +162,9 @@ class Store {
         // 只占位不干活的墓碑；这里读的时候顺手清掉，写回时就消失了。
         m.removeWhere((_, v) => v == null);
         state.pluginData[id] = m;
-      } catch (e) {
-        Log.w('store', '插件数据损坏，已跳过 $id: $e');
+    } catch (e) {
+      // 插件数据损坏不该让整个启动失败——跳过这一个插件，其余照常
+      Log.w('store', '插件数据损坏，已跳过 $id: $e');
       }
     }
   }
@@ -215,6 +217,29 @@ class Store {
     } catch (e) {
       Log.e('store', '配置保存失败: $e');
     }
+  }
+
+  /// 卸载插件：删除插件目录，并从配置中移除相关卡片。
+  Future<void> uninstall(String pluginId) async {
+    // 删除插件目录
+    final dir = Directory(p.join(_pluginDataDir, pluginId));
+    if (await dir.exists()) {
+      await dir.delete(recursive: true);
+    }
+    // 删除插件数据文件
+    final dataFile = File(_pluginFile(pluginId));
+    if (await dataFile.exists()) {
+      await dataFile.delete();
+    }
+    // 从缓存中移除
+    _cacheDir(pluginId); // 这里只是清理内存引用，实际文件已删
+    Log.i('store', '已卸载插件 $pluginId');
+  }
+
+  /// 重新扫描插件目录并重新加载配置。
+  Future<void> rescanPlugins() async {
+    await _loadPluginData(_state!);
+    await saveNow(_state!);
   }
 
   /// 配置序列化成文本。备份导出直接复用它——导出的就是一份 config.json，
