@@ -77,6 +77,7 @@ class PluginRegistry {
     'todo',
     'weather',
     'lyrics',
+    'launcher',
   ];
 
   Future<void> scan() async {
