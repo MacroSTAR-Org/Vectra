@@ -38,8 +38,8 @@ lw.register({
       var dateRow = { t: 'box', pad: [5, 10], radius: 14, bg: ACCENT + '1F',
         child: { t: 'row', gap: 7, cross: 'center', children: [
           { t: 'box', w: 5, h: 5, radius: 3, bg: ACCENT },
-          { t: 'text', v: (now.getMonth() + 1) + ' 月 ' + now.getDate() + ' 日', size: 13, opacity: 0.7 },
-          { t: 'text', v: week, size: 13, opacity: 0.7 }
+          { t: 'text', font: 'TsukushiBMaru', v: (now.getMonth() + 1) + ' 月 ' + now.getDate() + ' 日', size: 13, opacity: 0.7 },
+          { t: 'text', font: 'TsukushiBMaru', v: week, size: 13, opacity: 0.7 }
         ] } };
 
       var stacked = ctx.grid.rows >= 3;
@@ -53,20 +53,20 @@ lw.register({
         // 带一点壁纸色调"的效果对不上。小时留白/黑默认色保持稳重，
         // 分钟上色制造一点呼应，两行不是同一个颜色更有层次。
         var minuteRow = [
-          { t: 'text', v: two(now.getMinutes()), size: STACK_SIZE, weight: 300, mono: true, lh: 0.85, color: ACCENT }
+          { t: 'text', font: 'TsukushiBMaru', v: two(now.getMinutes()), size: STACK_SIZE, weight: 300, mono: true, lh: 0.85, color: ACCENT }
         ];
         if (ctx.settings.seconds) {
           minuteRow.push({ t: 'box', pad: [0, 0, 0, 8], child: {
-            t: 'text', v: two(now.getSeconds()), size: 20, weight: 400, mono: true, opacity: 0.4 } });
+            t: 'text', font: 'TsukushiBMaru', v: two(now.getSeconds()), size: 20, weight: 400, mono: true, opacity: 0.4 } });
         }
         if (suffix) {
           minuteRow.push({ t: 'box', pad: [0, 0, 0, 10], child: {
-            t: 'text', v: suffix, size: 16, weight: 600, opacity: 0.4 } });
+            t: 'text', font: 'TsukushiBMaru', v: suffix, size: 16, weight: 600, opacity: 0.4 } });
         }
         ctx.render({
           t: 'col', main: 'center', cross: 'start', gap: 10,
           children: [
-            { t: 'text', v: two(h), size: STACK_SIZE, weight: 300, mono: true, lh: 0.85, color: ACCENT },
+            { t: 'text', font: 'TsukushiBMaru', v: two(h), size: STACK_SIZE, weight: 300, mono: true, lh: 0.85, color: ACCENT },
             { t: 'row', cross: 'end', children: minuteRow },
             dateRow
           ]
@@ -81,19 +81,19 @@ lw.register({
       // 线都在往"分钟更轻、更跟着壁纸走"这个方向走，不是等重同色的
       // 数字堆。
       var timeRow = [
-        { t: 'text', v: two(h), size: big, weight: 900, mono: true, lh: 1.0, color: ACCENT },
+        { t: 'text', font: 'TsukushiBMaru', v: two(h), size: big, weight: 900, mono: true, lh: 1.0, color: ACCENT },
         { t: 'box', pad: [0, 2], child: {
-          t: 'text', v: ':', size: big, weight: 300, opacity: 0.35, mono: true, lh: 1.0 } },
-        { t: 'text', v: two(now.getMinutes()), size: big, weight: 400, mono: true, lh: 1.0, color: ACCENT }
+          t: 'text', font: 'TsukushiBMaru', v: ':', size: big, weight: 300, opacity: 0.35, mono: true, lh: 1.0 } },
+        { t: 'text', font: 'TsukushiBMaru', v: two(now.getMinutes()), size: big, weight: 400, mono: true, lh: 1.0, color: ACCENT }
       ];
       if (ctx.settings.seconds) {
         timeRow.push({ t: 'box', pad: [0, 0, 0, 4], child: {
-          t: 'text', v: two(now.getSeconds()), size: Math.round(big * 0.42),
+          t: 'text', font: 'TsukushiBMaru', v: two(now.getSeconds()), size: Math.round(big * 0.42),
           weight: 400, mono: true, opacity: 0.45 } });
       }
       if (suffix) {
         timeRow.push({ t: 'box', pad: [0, 0, 0, 5], child: {
-          t: 'text', v: suffix, size: Math.round(big * 0.3),
+          t: 'text', font: 'TsukushiBMaru', v: suffix, size: Math.round(big * 0.3),
           weight: 600, opacity: 0.4 } });
       }
 

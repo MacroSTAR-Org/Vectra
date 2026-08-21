@@ -68,7 +68,7 @@ class PanelApp extends StatelessWidget {
           locale: const Locale('zh', 'CN'),
           theme: FluentThemeData(
             brightness: light ? Brightness.light : Brightness.dark,
-            fontFamily: 'HarmonyOS Sans SC',
+            fontFamily: 'TsukushiBMaru',
             // 主色沿用磁贴那套天蓝：浅色下加深一档，保证对比度
             accentColor: AccentColor.swatch({
               'normal':

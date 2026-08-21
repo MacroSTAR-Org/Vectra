@@ -286,7 +286,7 @@ class VectraApp extends StatelessWidget {
       // 整条链路都必须透明：DWM 的逐像素 alpha 才有意义
       color: Colors.transparent,
       theme: ThemeData(
-          brightness: Brightness.dark, useMaterial3: true, fontFamily: 'HarmonyOS Sans SC'),
+          brightness: Brightness.dark, useMaterial3: true, fontFamily: 'TsukushiBMaru'),
       home: Scaffold(
         backgroundColor: Colors.transparent,
         body: AppRoot(

@@ -68,6 +68,15 @@ class PluginHost {
           (args['headers'] as Map?)?.cast<String, Object?>(),
         );
 
+      // 原始文本版：接口返回的不是纯 JSON 时用（比如中国天气网的城市
+      // 搜索 toy1 是 JSONP 包装 `([{...}])`，getJSON 的 jsonDecode 必然
+      // 炸）。插件拿到文本自己剥包装再解析。
+      case 'http.getText':
+        return _getText(
+          args['url'] as String? ?? '',
+          (args['headers'] as Map?)?.cast<String, Object?>(),
+        );
+
       case 'media.state':
         return _mediaState();
 
@@ -136,6 +145,29 @@ class PluginHost {
   /// 只允许覆盖白名单内的头，免得插件伪造 Cookie 之类的东西。
   Future<Map<String, Object?>> _getJson(
       String url, Map<String, Object?>? extraHeaders) async {
+    final res = await _fetch(url, extraHeaders);
+    if (res == null) return {'ok': false, 'error': '只允许 http/https'};
+    if (res['ok'] != true) return res;
+    try {
+      return {'ok': true, 'data': jsonDecode(res['text'] as String)};
+    } catch (e) {
+      Log.w('plugin', '插件 JSON 解析失败: $e');
+      return {'ok': false, 'error': '响应不是合法 JSON'};
+    }
+  }
+
+  Future<Map<String, Object?>> _getText(
+      String url, Map<String, Object?>? extraHeaders) async {
+    final res = await _fetch(url, extraHeaders);
+    if (res == null) return {'ok': false, 'error': '只允许 http/https'};
+    if (res['ok'] != true) return res;
+    return {'ok': true, 'data': res['text'] as String};
+  }
+
+  /// 共用请求骨架：URL 校验、头白名单、日志留痕、超时。返回的 map 里
+  /// ok=false 时带 error；ok=true 时带 text（原始文本）。
+  Future<Map<String, Object?>?> _fetch(
+      String url, Map<String, Object?>? extraHeaders) async {
     final uri = Uri.tryParse(url);
     if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
       return {'ok': false, 'error': '只允许 http/https'};
@@ -167,7 +199,10 @@ class PluginHost {
       }
       Log.i('plugin',
           '$pluginId 请求成功 $target ${res.bodyBytes.length}B（${sw.elapsedMilliseconds}ms）');
-      return {'ok': true, 'data': jsonDecode(utf8.decode(res.bodyBytes))};
+      return {
+        'ok': true,
+        'text': utf8.decode(res.bodyBytes),
+      };
     } catch (e) {
       sw.stop();
       // 异常文本里常常带着完整请求 URL，而 URL 的 query 可能含密钥

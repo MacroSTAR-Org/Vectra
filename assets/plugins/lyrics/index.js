@@ -16,6 +16,10 @@ lw.register({
     var S = ctx.settings || {};
     var W = ctx.size.w, H = ctx.size.h;
 
+    // 跟"莫奈取色"联动：开着取色开关时 ctx.theme.accent 是壁纸算出来的
+    // 强调色，关着就退回主题蓝。辉光和日期胶囊共用这一个颜色。
+    var ACCENT = (ctx.theme && ctx.theme.accent) || '#7CC7FF';
+
     // ---- 界面尺寸：按卡片高度缩放，小尺寸也不至于挤成一团 ----
     var PAD = 12;
     // ---- 左列：封面 / 歌名 / 歌手 ----
@@ -429,13 +433,22 @@ lw.register({
         } else {
           op = 0.14; trOp = 0.08; sz = lyricSize; wt = 400;
         }
+        // "正在唱"这一行带辉光（霓虹效果）：文字外面套一层主题色的光晕，
+        // 和上下文行的对比不只有字号和透明度，还有"在发光"这个信号——
+        // 扫一眼就知道唱到哪了。辉光只在当前行，别把整个歌词区点成灯牌。
+        //
+        // 半径按字号配：原文行大（lyricSize+2 ≈ 15-17px，给 7），译文行小
+        // （lyricSize-3 ≈ 10-12px，给 4.5）——光晕半径必须小于字间距，
+        // 不然光会铺满整行变成"区域加亮"而不是"字体发光"（实测踩过）。
+        var glowMain = isCurrent ? { glow: ACCENT, glowSigma: 9 } : {};
+        var glowTr = isCurrent ? { glow: ACCENT, glowSigma: 6 } : {};
         var body = txt(line.s || '·', sz, null, op,
-          { maxLines: 1, weight: wt });
+          { maxLines: 1, weight: wt, ...glowMain });
         // 译文只在"正在唱"的这一行显示：上下文行本来就压到很淡的透明度，
         // 译文在那个淡度下基本看不清，全部显示只是白白占空间（见上面
-        // LINE_CONTEXT/LINE_CURRENT 的说明）。
+        // LINE_CONTEXT/LINE_CURRENT 的说明）。译文同样带辉光，跟原文一体。
         var cell = (isCurrent && line.tr)
-          ? { t: 'col', gap: 2, children: [body, txt(line.tr, lyricSize - 3, null, trOp, { maxLines: 1 })] }
+          ? { t: 'col', gap: 2, children: [body, txt(line.tr, lyricSize - 3, null, trOp, { maxLines: 1, ...glowTr })] }
           : body;
         // h + clip：每一行都钉死在各自的高度预算内，超出的部分（比如字号/
         // 字重估算的一两像素误差）直接裁掉，而不是把整个歌词区顶高、拖累
