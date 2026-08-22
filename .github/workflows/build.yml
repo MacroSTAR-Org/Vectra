@@ -70,11 +70,12 @@ jobs:
       - name: Install Inno Setup
         shell: pwsh
         run: |
-          $installer = Join-Path $env:TEMP "innosetup.exe"
-          Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile $installer -MaximumRedirection 10
-          $process = Start-Process -FilePath $installer -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-" -Wait -PassThru -NoNewWindow
-          if ($process.ExitCode -ne 0) {
-            throw "Inno Setup installer failed with exit code $($process.ExitCode)"
+          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+            throw "choco is not available on this runner"
+          }
+          choco install innosetup --no-progress --yes
+          if ($LASTEXITCODE -ne 0) {
+            throw "choco install innosetup failed with exit code $LASTEXITCODE"
           }
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) {
