@@ -1,0 +1,65 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.head_ref || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-package:
+    name: Build & Package
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Restore packages
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        run: flutter test --no-pub
+
+      - name: Run JS verifiers
+        shell: bash
+        run: |
+          set -e
+          node test/js/lrc_verify.js
+          node test/js/lunar_verify.js
+          node test/js/lunar_extra_verify.js
+          node test/js/pick_verify.js
+
+      - name: Build Windows Debug
+        run: flutter build windows --debug --no-pub
+
+      - name: Check build output
+        shell: pwsh
+        run: |
+          $exePath = "build/windows/x64/runner/Debug/vectra.exe"
+          if (-not (Test-Path $exePath)) {
+            Write-Error "vectra.exe not found: $exePath"
+            exit 1
+          }
+
+      - name: Upload Debug Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Vectra-debug-${{ github.sha }}
+          path: build/windows/x64/runner/Debug/*
