@@ -499,8 +499,13 @@ await ctx.media.seek(90000);   // 毫秒
 ctx.requestSize('3x2');    // 请求换尺寸，必须是 manifest.sizes 里有的
 ctx.openSettings();        // 打开这张卡片的设置面板
 ctx.toast('已保存');        // 提示（目前只写日志，UI 待做）
-await ctx.openExternal('https://example.com');   // 用默认浏览器打开
+await ctx.openExternal('https://example.com');   // 用默认浏览器打开（只放行 http/https）
+await ctx.launch('C:\\Windows\\notepad.exe');    // 启动本地程序
 ```
+
+`ctx.launch` 只放行**本地绝对路径**且扩展名在白名单（exe / lnk / bat / cmd / msc，与
+pickFile 的 ext 过滤一致）内，别的路径拿到 `{ok:false, error}`。快捷启动类的插件
+（launcher）就靠它。
 
 ---
 

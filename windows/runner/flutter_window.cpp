@@ -533,6 +533,27 @@ void HandleMethodCall(
     return;
   }
 
+  // 启动本地程序（launcher 卡片点了快捷方式）。
+  // 路径和扩展名白名单在 Dart 宿主层把过关，这里只管执行。
+  // ShellExecuteW 的返回值大于 32 才算成功，失败码原样报回去：
+  // "点了没反应"这种事必须留下线索。
+  if (call.method_name() == "launchApp") {
+    const auto* path = std::get_if<std::string>(call.arguments());
+    if (!path || path->empty()) {
+      result->Error("bad_args", "launchApp 需要程序路径");
+      return;
+    }
+    const std::wstring wpath = Utf8ToWide(*path);
+    const auto rc = reinterpret_cast<intptr_t>(::ShellExecuteW(
+        nullptr, L"open", wpath.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+    if (rc <= 32) {
+      result->Error("launch_failed", "ShellExecuteW 返回 " + std::to_string(rc));
+      return;
+    }
+    result->Success(true);
+    return;
+  }
+
   // 系统文件选择对话框。传入 {title, ext}，返回选中的文件路径（string）。
   // 用户取消时返回 null（Flutter 侧拿到 null）。
   if (call.method_name() == "pickFile") {

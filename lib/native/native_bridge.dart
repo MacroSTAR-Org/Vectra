@@ -141,6 +141,11 @@ class NativeBridge {
         'ext': ext,
       });
 
+  /// 启动本地程序（exe/lnk/bat/cmd/msc）。路径与扩展名的白名单在插件宿主
+  /// 层把关，这里只转发。返回是否启动成功。
+  static Future<bool> launchApp(String path) async =>
+      await _channel.invokeMethod<bool>('launchApp', path) ?? false;
+
   /// 当前所有显示器的物理矩形 + 设备名。多显示器适配用。
   static Future<List<MonitorRect>> getMonitors() async {
     final list =

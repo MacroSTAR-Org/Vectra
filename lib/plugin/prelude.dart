@@ -215,6 +215,8 @@ var lw = (function () {
     ctx.openSettings = function () { post({ method: 'openSettings' }); };
     ctx.toast = function (m) { post({ method: 'toast', args: { message: String(m) } }); };
     ctx.openExternal = function (u) { post({ method: 'openExternal', args: { url: String(u) } }); };
+    // 启动本地程序（exe/lnk/bat/cmd/msc，绝对路径）。返回 Promise<{ok}>。
+    ctx.launch = function (p) { return call('launch', { path: String(p) }); };
     ctx.pickFile = function (opts) { return call('pickFile', opts || {}); };
     ctx.sdk = sdk;
 

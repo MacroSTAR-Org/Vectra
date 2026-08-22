@@ -1,5 +1,5 @@
 // launcher - 快捷启动器
-// 展示 SDK：onLoad + lifecycle.on + widget.register + storage 持久化 + pickFile
+// 展示 SDK：onLoad + widget.register + storage 持久化 + pickFile + launch
 lw.register({
   onLoad: function (api) {
     api.sdk.widget.register({
@@ -27,9 +27,15 @@ lw.register({
           var s = list[idx];
           var name = s.name || '???';
           var icon = name.charAt(0).toUpperCase();
+          // tap 节点的 id 必须是 ctx.on() 返回的处理器 id，点击才能路由回来
+          var h = ctx.on(function () {
+            ctx.launch(s.path).then(function (r) {
+              if (r && r.ok === false) ctx.toast('启动失败：' + name);
+            });
+          });
           children.push({
             t: 'tap',
-            id: 'launch:' + idx,
+            id: h,
             child: {
               t: 'col', main: 'center', cross: 'center', gap: 2, children: [
                 { t: 'box', w: 36, h: 36, radius: 10,
@@ -43,8 +49,24 @@ lw.register({
       }
 
       // 添加按钮
+      var hAdd = ctx.on(function () {
+        ctx.pickFile({
+          title: '选择要添加的程序',
+          ext: ['exe', 'lnk', 'bat', 'cmd', 'msc']
+        }).then(function (res) {
+          if (res && res.ok && res.path) {
+            // 从路径提取文件名（去掉扩展名）
+            var parts = res.path.replace(/\\/g, '/').split('/');
+            var fileName = parts[parts.length - 1] || res.path;
+            var name = fileName.replace(/\.(exe|lnk|bat|cmd|msc|ps1)$/i, '');
+            list.push({ name: name, path: res.path });
+            save();
+            render();
+          }
+        });
+      });
       children.push({
-        t: 'tap', id: 'add', child: {
+        t: 'tap', id: hAdd, child: {
           t: 'col', main: 'center', cross: 'center', children: [
             { t: 'box', w: 36, h: 36, radius: 10, bg: '#ffffff0d', center: true,
               child: { t: 'icon', v: 'add', size: 18 } },
@@ -61,39 +83,6 @@ lw.register({
         }
       });
     }
-
-    // ---- 事件 ----
-    var hTap = ctx.on(function (e) {
-      if (!e.id) return;
-
-      // 启动应用
-      if (e.id.indexOf('launch:') === 0) {
-        var idx = parseInt(e.id.split(':')[1]);
-        if (idx >= 0 && idx < list.length) {
-          ctx.openExternal(list[idx].path);
-        }
-        return;
-      }
-
-      // 添加快捷方式：打开文件选择器
-      if (e.id === 'add') {
-        ctx.pickFile({
-          title: '选择要添加的程序',
-          ext: ['exe', 'lnk', 'bat', 'cmd', 'msc']
-        }).then(function (res) {
-          if (res && res.ok && res.path) {
-            // 从路径提取文件名（去掉扩展名）
-            var parts = res.path.replace(/\\/g, '/').split('/');
-            var fileName = parts[parts.length - 1] || res.path;
-            var name = fileName.replace(/\.(exe|lnk|bat|cmd|msc|ps1)$/i, '');
-            list.push({ name: name, path: res.path });
-            save();
-            render();
-          }
-        });
-        return;
-      }
-    });
 
     // ---- 初始化 ----
     var raw = ctx.settings.shortcuts;

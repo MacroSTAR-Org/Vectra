@@ -109,6 +109,9 @@ class PluginHost {
       case 'openExternal':
         return _openExternal(args['url'] as String? ?? '');
 
+      case 'launch':
+        return _launch(args['path'] as String? ?? '');
+
       case 'pickFile':
         return _pickFile(args);
 
@@ -311,6 +314,39 @@ class PluginHost {
     } catch (e) {
       Log.w('plugin', '$pluginId 打开外部链接失败 ${uri.host}: $e');
       return {'ok': false, 'error': '$e'};
+    }
+  }
+
+  /// launcher 之类快捷启动的落点：启动本地程序。openExternal 只放行
+  /// http/https，本地路径走这条路，白名单收得和 pickFile 的 ext 过滤
+  /// 一致（exe/lnk/bat/cmd/msc），免得插件随便开个 .js 用宿主身份执行。
+  static const _launchExtWhitelist = {'exe', 'lnk', 'bat', 'cmd', 'msc'};
+
+  /// 盘符路径（C:\ 或 C:/）或 UNC（\\server\share）才算绝对路径。
+  /// 不用 Uri.parse：它对反斜杠路径的行为不可靠。
+  static final _winAbsPathRe = RegExp(r'^(?:[a-zA-Z]:[\\/]|\\\\)');
+
+  Future<Map<String, Object?>> _launch(String path) async {
+    if (!_winAbsPathRe.hasMatch(path)) {
+      return {'ok': false, 'error': '只允许本地绝对路径'};
+    }
+    final dot = path.lastIndexOf('.');
+    final ext = dot >= 0 ? path.substring(dot + 1).toLowerCase() : '';
+    if (!_launchExtWhitelist.contains(ext)) {
+      return {'ok': false, 'error': '只允许 exe/lnk/bat/cmd/msc'};
+    }
+    try {
+      final ok = await NativeBridge.launchApp(path);
+      if (!ok) {
+        Log.w('plugin', '$pluginId 启动失败 $path');
+        return {'ok': false, 'error': '启动失败'};
+      }
+      Log.i('plugin', '$pluginId 启动程序 $path');
+      return {'ok': true};
+    } catch (e) {
+      // native 报 Error（比如 ShellExecute 拒绝）会以 PlatformException 冒上来
+      Log.w('plugin', '$pluginId 启动异常 $path: $e');
+      return {'ok': false, 'error': '启动失败'};
     }
   }
 }
