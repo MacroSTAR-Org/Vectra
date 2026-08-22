@@ -71,13 +71,13 @@ class PluginRegistry {
   LoadedPlugin? operator [](String id) => _plugins[id];
 
   /// 内置插件清单。Flutter 的 asset 不支持目录枚举，只能显式列出。
+  /// launcher 已移出内置，走 Unisphere 市场分发（源码在仓库 plugins/launcher/）。
   static const List<String> builtinIds = [
     'clock',
     'calendar',
     'todo',
     'weather',
     'lyrics',
-    'launcher',
   ];
 
   Future<void> scan() async {

@@ -493,4 +493,48 @@ void main() {
       expect(resolveDownloadUrl(base, ''), isNull);
     });
   });
+
+  // ---------------- launcher 市场包 ----------------
+
+  group('launcher 市场包', () {
+    // launcher 已移出内置、走市场分发（源码在仓库 plugins/launcher/）。
+    // 这条链路钉住"源码打出的包能被 PluginInstaller 真正装上"：
+    // manifest 合法、id 与目录名一致、entry 在包里，装完的目录能被 registry 扫到。
+    test('源码打出的包能装（id/entry 校验全过）', () async {
+      final dir = Directory.systemTemp.createTempSync('vectra-launcher-pkg');
+      addTearDown(() {
+        try {
+          dir.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final manifestBytes = File('plugins/launcher/manifest.json').readAsBytesSync();
+      final jsBytes = File('plugins/launcher/index.js').readAsBytesSync();
+      // zip 里套一层 id 目录——Unisphere 的打包惯例
+      final archive = Archive()
+        ..addFile(ArchiveFile('launcher/manifest.json',
+            manifestBytes.length, manifestBytes))
+        ..addFile(
+            ArchiveFile('launcher/index.js', jsBytes.length, jsBytes));
+      final zip = Uint8List.fromList(ZipEncoder().encode(archive));
+
+      await PluginInstaller(dir.path)
+          .install(zip, expectId: 'launcher', expectVersion: '1.1.0');
+
+      expect(File(p.join(dir.path, 'launcher', 'manifest.json')).existsSync(),
+          isTrue);
+      expect(File(p.join(dir.path, 'launcher', 'index.js')).existsSync(), isTrue);
+      // 装出来的 manifest 必须还能被插件加载器解析（id/entry/sizes 都合法）
+      final mf = PluginManifest.parse(
+        (jsonDecode(
+                File(p.join(dir.path, 'launcher', 'manifest.json'))
+                    .readAsStringSync())
+                as Map)
+            .cast<String, Object?>(),
+        source: 'user',
+      );
+      expect(mf.id, 'launcher');
+      expect(mf.author, 'MacroSTAR');
+    });
+  });
 }

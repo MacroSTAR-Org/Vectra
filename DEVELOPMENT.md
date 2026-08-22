@@ -362,7 +362,7 @@ lw.register({
 
 ### 8.5 内置插件
 
-6 个内置插件在 `assets/plugins/` 下：
+5 个内置插件在 `assets/plugins/` 下：
 
 | 插件 | 展示的能力 |
 |:---|:---|
@@ -371,7 +371,11 @@ lw.register({
 | todo | input 提交、setLocal 存数据、列表增删 |
 | weather | HTTP 请求 + 错误处理 + cacheSet + flip 翻面 |
 | lyrics | ctx.media 全套、image 封面、slider、gradientMask |
-| launcher | SDK onLoad + widget.register + flip 编辑面（重命名/重排/删除）+ pickFile + launch |
+
+**launcher（快捷启动）不是内置插件**：源码在仓库 `plugins/launcher/`，走
+Unisphere 市场分发（zip 内套一层 `launcher/` 目录，含 manifest.json + index.js，
+manifest 的 id 必须与目录名一致）。它展示 SDK onLoad + widget.register +
+flip 编辑面（重命名/重排/删除）+ pickFile + launch。
 
 ### 8.6 内置插件注册
 
