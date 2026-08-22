@@ -13,8 +13,8 @@ permissions:
   contents: read
 
 jobs:
-  build-and-package:
-    name: Build & Package
+  normal-build:
+    name: 正常构建
     runs-on: windows-latest
     steps:
       - name: Checkout code
@@ -31,8 +31,93 @@ jobs:
       - name: Restore packages
         run: flutter pub get
 
-      - name: Analyze
-        run: flutter analyze
+      - name: Build Windows Release
+        run: flutter build windows --release --no-pub
+
+      - name: Check build output
+        shell: pwsh
+        run: |
+          $exePath = "build/windows/x64/runner/Release/vectra.exe"
+          if (-not (Test-Path $exePath)) {
+            Write-Error "vectra.exe not found: $exePath"
+            exit 1
+          }
+
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Vectra-release-${{ github.sha }}
+          path: build/windows/x64/runner/Release/*
+
+  portable-build:
+    name: 便携构建
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Restore packages
+        run: flutter pub get
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:TEMP "innosetup.exe"
+          Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile $installer -MaximumRedirection 10
+          $process = Start-Process -FilePath $installer -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-" -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) {
+            throw "Inno Setup installer failed with exit code $($process.ExitCode)"
+          }
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            throw "Inno Setup 6 was not installed"
+          }
+
+      - name: Build Portable Installer
+        shell: cmd
+        run: tool\build_release.bat
+
+      - name: Find Portable Installer
+        id: find_portable
+        shell: pwsh
+        run: |
+          $portable = Get-ChildItem "installer/out" -Filter "Vectra-*.exe" | Select-Object -First 1
+          if (-not $portable) {
+            throw "Portable installer not found"
+          }
+          echo "portable_name=$($portable.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Portable Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Vectra-portable-${{ github.sha }}
+          path: installer/out/${{ steps.find_portable.outputs.portable_name }}
+
+  test:
+    name: 测试
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Restore packages
+        run: flutter pub get
 
       - name: Run Flutter tests
         run: flutter test --no-pub
@@ -45,21 +130,3 @@ jobs:
           node test/js/lunar_verify.js
           node test/js/lunar_extra_verify.js
           node test/js/pick_verify.js
-
-      - name: Build Windows Debug
-        run: flutter build windows --debug --no-pub
-
-      - name: Check build output
-        shell: pwsh
-        run: |
-          $exePath = "build/windows/x64/runner/Debug/vectra.exe"
-          if (-not (Test-Path $exePath)) {
-            Write-Error "vectra.exe not found: $exePath"
-            exit 1
-          }
-
-      - name: Upload Debug Artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: Vectra-debug-${{ github.sha }}
-          path: build/windows/x64/runner/Debug/*
