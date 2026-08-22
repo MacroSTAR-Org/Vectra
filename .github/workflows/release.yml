@@ -1,0 +1,177 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: "Create as draft release"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: windows-latest
+    outputs:
+      tag_name: ${{ steps.get_tag.outputs.tag_name }}
+      version: ${{ steps.get_tag.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve version and tag
+        id: get_tag
+        shell: pwsh
+        run: |
+          $match = Select-String -Path pubspec.yaml -Pattern '^version:' | Select-Object -First 1
+          if (-not $match) {
+            throw "Could not read version from pubspec.yaml"
+          }
+          $pubspecVersion = $match.Line.Substring($match.Line.IndexOf(':') + 1).Trim()
+          $version = $pubspecVersion -replace '\+', '.'
+          echo "tag_name=$version" >> $env:GITHUB_OUTPUT
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "Using pubspec version: $version"
+
+      - name: Ensure tag does not exist
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.get_tag.outputs.tag_name }}"
+          $existing = git tag --list "$tag"
+          if ($existing) {
+            throw "Tag '$tag' already exists"
+          }
+
+  build:
+    needs: prepare
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      portable_name: ${{ steps.find_portable.outputs.portable_name }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Restore packages
+        run: flutter pub get
+
+      - name: Run Flutter tests
+        run: flutter test --no-pub
+
+      - name: Run JS verifiers
+        shell: bash
+        run: |
+          set -e
+          node test/js/lrc_verify.js
+          node test/js/lunar_verify.js
+          node test/js/lunar_extra_verify.js
+          node test/js/pick_verify.js
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+            throw "choco is not available on this runner"
+          }
+          choco install innosetup --no-progress --yes
+          if ($LASTEXITCODE -ne 0) {
+            throw "choco install innosetup failed with exit code $LASTEXITCODE"
+          }
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            throw "Inno Setup 6 was not installed"
+          }
+
+      - name: Build release and portable installer
+        shell: cmd
+        run: tool\build_release.bat
+
+      - name: Create release folder archive
+        shell: pwsh
+        run: |
+          $version = "${{ needs.prepare.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path "installer/out" | Out-Null
+          Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "installer/out/Vectra-$version-release.zip" -Force
+          Get-ChildItem "installer/out" | Select-Object Name,Length
+
+      - name: Find portable installer
+        id: find_portable
+        shell: pwsh
+        run: |
+          $version = "${{ needs.prepare.outputs.version }}"
+          $portable = Get-ChildItem "installer/out" -Filter "Vectra-$version-*.exe" | Select-Object -First 1
+          if (-not $portable) {
+            throw "Portable installer not found"
+          }
+          echo "portable_name=$($portable.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: Vectra-${{ needs.prepare.outputs.version }}
+          path: |
+            installer/out/Vectra-${{ needs.prepare.outputs.version }}-release.zip
+            installer/out/${{ steps.find_portable.outputs.portable_name }}
+
+  release:
+    needs: [prepare, build]
+    if: success()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: Vectra-${{ needs.prepare.outputs.version }}
+          path: release-artifacts
+
+      - name: Prepare release body
+        id: release_body
+        shell: bash
+        run: |
+          version="${{ needs.prepare.outputs.version }}"
+          portable="${{ needs.build.outputs.portable_name }}"
+          zip_size=$(wc -c < "release-artifacts/Vectra-$version-release.zip")
+          portable_size=$(wc -c < "release-artifacts/$portable")
+          {
+            echo "## Files"
+            echo ""
+            echo "| File | Size |"
+            echo "|------|------|"
+            echo "| Vectra-$version-release.zip | $zip_size bytes |"
+            echo "| $portable | $portable_size bytes |"
+          } > release-body.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag_name }}
+          target_commitish: ${{ github.sha }}
+          name: Vectra ${{ needs.prepare.outputs.version }}
+          body_path: release-body.md
+          draft: ${{ github.event.inputs.draft == 'true' || false }}
+          prerelease: false
+          files: |
+            release-artifacts/Vectra-${{ needs.prepare.outputs.version }}-release.zip
+            release-artifacts/${{ needs.build.outputs.portable_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
