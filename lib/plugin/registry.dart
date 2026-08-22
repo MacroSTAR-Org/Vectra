@@ -15,6 +15,7 @@ import 'package:path/path.dart' as p;
 
 import '../core/logger.dart';
 import 'manifest.dart';
+import 'sdk.dart';
 
 class LoadedPlugin {
   LoadedPlugin(this.manifest, this.source);
@@ -34,6 +35,35 @@ class PluginRegistry {
   /// 加载失败的插件：目录 -> 原因。面板里要能看到，不能静默吞掉。
   final Map<String, String> errors = {};
 
+  // ---- SDK 注册表 ----
+
+  /// 插件注册的自定义节点类型：type → handler
+  final Map<String, NodeHandler> registeredNodes = {};
+
+  /// 插件注册的自定义能力：name → handler
+  final Map<String, CapabilityHandler> registeredCapabilities = {};
+
+  /// 插件注册的 widget 模板
+  final List<WidgetTemplate> registeredWidgets = [];
+
+  /// 生命周期事件监听器
+  final Map<String, List<LifecycleListener>> lifecycleListeners = {};
+
+  /// 触发生命周期事件。由宿主在对应时机调用。
+  void emitLifecycle(String event, [Map<String, Object?>? data]) {
+    final listeners = lifecycleListeners[event];
+    if (listeners == null || listeners.isEmpty) return;
+    for (final l in List.of(listeners)) {
+      try {
+        if (l.handler is Function) {
+          (l.handler as Function)(data);
+        }
+      } catch (e) {
+        Log.w('plugin', '生命周期事件 $event 处理失败 (${l.pluginId}): $e');
+      }
+    }
+  }
+
   List<PluginManifest> list() =>
       _plugins.values.map((e) => e.manifest).toList()
         ..sort((a, b) => a.name.compareTo(b.name));
@@ -47,6 +77,7 @@ class PluginRegistry {
     'todo',
     'weather',
     'lyrics',
+    'launcher',
   ];
 
   Future<void> scan() async {
@@ -65,6 +96,9 @@ class PluginRegistry {
             source: 'builtin');
         if (manifest.id != id) {
           throw FormatException('manifest.id "${manifest.id}" 与目录名 "$id" 不一致');
+        }
+        if (manifest.apiVersion != '1.0') {
+          Log.w('plugin', '内置插件 $id 要求 API ${manifest.apiVersion}，当前是 1.0');
         }
         // scripts 先于 entry 加载，拼成一段代码交给同一个 QuickJS 运行时
         final buf = StringBuffer();
@@ -101,6 +135,9 @@ class PluginRegistry {
             source: 'user');
         if (manifest.id != name) {
           throw FormatException('manifest.id "${manifest.id}" 必须与目录名 "$name" 相同');
+        }
+        if (manifest.apiVersion != '1.0') {
+          Log.w('plugin', '用户插件 $name 要求 API ${manifest.apiVersion}，当前是 1.0');
         }
         // 路径穿越防护：entry 必须落在插件目录内
         final entryPath = p.normalize(p.join(entry.path, manifest.entry));

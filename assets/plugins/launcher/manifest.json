@@ -1,0 +1,19 @@
+{
+  "id": "launcher",
+  "name": "快捷启动",
+  "version": "1.0.0",
+  "entry": "index.js",
+  "description": "常用程序一键启动",
+  "icon": "🚀",
+  "sizes": ["2x2", "3x2", "3x3", "4x3"],
+  "defaultSize": "2x2",
+  "settings": [
+    {
+      "key": "shortcuts",
+      "type": "text",
+      "label": "快捷方式",
+      "desc": "JSON 格式，每项含 name 和 path",
+      "default": "[{\"name\":\"记事本\",\"path\":\"notepad.exe\"},{\"name\":\"画图\",\"path\":\"mspaint.exe\"},{\"name\":\"命令行\",\"path\":\"cmd.exe\"},{\"name\":\"计算器\",\"path\":\"calc.exe\"}]"
+    }
+  ]
+}

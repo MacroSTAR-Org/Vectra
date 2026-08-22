@@ -18,6 +18,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'images.dart';
+import 'registry.dart';
 
 /// 事件回调：插件在树里声明 {"t":"tap","id":"h1"}，点中时回调 h1
 typedef PluginEvent = void Function(String handlerId, Map<String, Object?> payload);
@@ -45,6 +46,7 @@ class PluginView extends StatefulWidget {
     required this.tree,
     required this.onEvent,
     this.animate = true,
+    this.registry,
   });
 
   /// 插件返回的 UI 树；null 表示还没渲染出内容
@@ -53,6 +55,9 @@ class PluginView extends StatefulWidget {
 
   /// 是否允许内容切换动画（全局设置里可以关）
   final bool animate;
+
+  /// 插件注册表（用于查找自定义节点类型）。null 时只用内置节点。
+  final PluginRegistry? registry;
 
   @override
   State<PluginView> createState() => _PluginViewState();
@@ -187,6 +192,29 @@ class _PluginViewState extends State<PluginView> {
       case 'flip':
         return _flip(n);
       default:
+        // 查插件注册的自定义节点类型
+        final nodeType = _str(n['t']);
+        if (widget.registry != null && nodeType != null) {
+          final handler = widget.registry!.registeredNodes[nodeType];
+          if (handler != null) {
+            // v1: 自定义节点目前只显示一个占位符。
+            // 后续接入 QuickJS 调用链后，会调用 handler.render(props) 获取真实 widget。
+            return Container(
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.extension_outlined,
+                      size: 14, color: _fg.withValues(alpha: 0.5)),
+                  const SizedBox(width: 4),
+                  Text(nodeType,
+                      style: TextStyle(
+                          fontSize: 11, color: _fg.withValues(alpha: 0.5))),
+                ],
+              ),
+            );
+          }
+        }
         // 未知节点不该让整张卡片崩掉
         return const SizedBox.shrink();
     }

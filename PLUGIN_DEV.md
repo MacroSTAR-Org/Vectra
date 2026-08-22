@@ -30,6 +30,7 @@ userdata\plugins\
 - [调试](#调试)
 - [约束与注意事项](#约束与注意事项)
 - [拿内置插件当范本](#拿内置插件当范本)
+- [插件 SDK：扩展宿主程序](#插件-sdk扩展宿主程序)
 
 ---
 
@@ -132,6 +133,9 @@ QuickJS 是干净的 ES2020 引擎，**没有** DOM、`window`、`document`、`f
 | `singleton` | boolean | | 为 `true` 时全桌面只允许一个实例 |
 | `settings` | object[] | | 设置项，见下 |
 | `scripts` | string[] | | 在 `entry` 之前按顺序加载的附加脚本（相对插件目录），用来拆分代码 |
+| `api_version` | string | | 要求的 SDK API 版本，默认 `"1.0"`。不匹配时警告但不阻止加载 |
+| `dependencies` | string[] | | 依赖的其他插件注册的能力（`"provider:capability"` 格式） |
+| `headless` | boolean | | 是否支持无 UI 后台运行（用于能力提供者插件），默认 `false` |
 
 尺寸写成 `"列x行"`，一格的实际像素由用户在设置里的网格大小决定。
 
@@ -572,6 +576,121 @@ ctx.render({ key: '2026-8', t: 'col', children: [ /* 日历内容 */ ] });
 | `todo` | `input` 提交、`setLocal` 存用户数据、列表增删 |
 | `weather` | HTTP 请求 + 错误处理 + 重试按钮、`cacheSet` 缓存、`flip` 翻面 |
 | `lyrics` | `ctx.media` 全套、`image` 封面、`slider` 拖进度、`gradientMask` 边缘渐隐 |
+
+---
+
+---
+
+## 插件 SDK：扩展宿主程序
+
+除了用 `ctx.render()` 画卡片，插件还可以通过 SDK 扩展 Vectra 本身。在 `lw.register()` 里加一个 `onLoad` 函数即可：
+
+```js
+lw.register({
+  onLoad: function (api) {
+    // api.sdk 提供扩展点
+    // api.appVersion — Vectra 版本号
+    // api.pluginDir  — 插件目录路径
+  },
+
+  mount: function (ctx) {
+    ctx.render({ t: 'text', v: '我的插件', size: 14 });
+  }
+});
+```
+
+### 注册新的渲染节点类型
+
+让 `ctx.render()` 能画更多东西：
+
+```js
+onLoad: function (api) {
+  api.sdk.node.register('chart', {
+    // v1 阶段：注册即生效，宿主会显示占位符
+    // 后续版本会调用 render 函数获取真实 widget
+  });
+}
+```
+
+然后其他插件就能在 UI 树里用了：
+
+```js
+ctx.render({ t: 'chart', data: [10, 25, 18], type: 'line' });
+```
+
+> 同名节点类型会被拒绝（后者不覆盖前者），日志里会记录冲突。
+
+### 注册新的 host API 能力
+
+让 `ctx` 上出现全新的 API 对象：
+
+```js
+onLoad: function (api) {
+  api.sdk.capability.register('websocket', {
+    connect: function (args) { /* ... */ },
+    send: function (args) { /* ... */ },
+    // 方法表可以是部分的——只注册需要的方法
+  });
+}
+```
+
+其他插件声明依赖后就能用（manifest 里写 `"dependencies": ["my-plugin:websocket"]`）。
+
+### 钩入生命周期
+
+在程序的各个阶段注入行为：
+
+```js
+onLoad: function (api) {
+  api.sdk.lifecycle.on('appReady', function (data) {
+    // 程序启动完毕
+  });
+
+  api.sdk.lifecycle.on('cardAdded', function (data) {
+    // data = { id, pluginId, size }
+  });
+
+  api.sdk.lifecycle.on('wallpaperChanged', function (data) {
+    // data = { path, brightness }
+  });
+}
+```
+
+可用的生命周期事件：
+
+| 事件 | 触发时机 |
+|------|---------|
+| `appReady` | 程序启动完毕，所有卡片首次渲染完成 |
+| `cardAdded` | 一张卡片被添加到桌面 |
+| `cardRemoved` | 一张卡片从桌面移除 |
+| `cardResized` | 一张卡片被调整大小 |
+| `wallpaperChanged` | 壁纸切换 |
+| `themeChanged` | 系统主题切换 |
+| `settingsChanged` | 全局设置变更 |
+
+### 注册 widget 模板
+
+在组件库中添加一键添加的卡片模板：
+
+```js
+onLoad: function (api) {
+  api.sdk.widget.register({
+    id: 'stock-ticker',
+    name: '股票行情',
+    description: '实时股价显示',
+    icon: '📈',
+    sizes: ['2x2', '3x2'],
+    defaultSize: '3x2',
+    settings: [
+      { key: 'symbol', type: 'text', label: '股票代码', default: 'AAPL' }
+    ]
+  });
+}
+```
+
+### 清理
+
+插件卸载时，所有注册的节点、能力、生命周期监听会自动清理。不需要手动处理。
 
 ---
 

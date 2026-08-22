@@ -306,6 +306,7 @@ List<WidgetCard> _defaultLayout() {
     WidgetCard(id: 'calendar-$now', pluginId: 'calendar', x: 296, y: 48, size: '3x3', z: 2),
     WidgetCard(id: 'todo-$now', pluginId: 'todo', x: 48, y: 296, size: '2x3', z: 3),
     WidgetCard(id: 'weather-$now', pluginId: 'weather', x: 668, y: 48, size: '3x2', z: 4),
+    WidgetCard(id: 'launcher-$now', pluginId: 'launcher', x: 668, y: 296, size: '2x2', z: 5),
   ];
 }
 

@@ -130,6 +130,30 @@ var lw = (function () {
 
   function register(x) { impl = x; }
 
+  // ---- SDK 扩展点 ----
+  var sdk = {
+    node: {
+      register: function (type, renderFn) {
+        post({ method: '__sdk.node.register', args: { type: type, render: renderFn } });
+      }
+    },
+    capability: {
+      register: function (name, handler) {
+        post({ method: '__sdk.capability.register', args: { name: name, handler: handler } });
+      }
+    },
+    widget: {
+      register: function (template) {
+        post({ method: '__sdk.widget.register', args: { template: template } });
+      }
+    },
+    lifecycle: {
+      on: function (event, handler) {
+        post({ method: '__sdk.lifecycle.on', args: { event: event, handler: handler } });
+      }
+    }
+  };
+
   function __mount(c) {
     ctx = c;
     // ctx 的成员名与 Electron 版保持一致，只有 root 换成 render
@@ -191,6 +215,16 @@ var lw = (function () {
     ctx.openSettings = function () { post({ method: 'openSettings' }); };
     ctx.toast = function (m) { post({ method: 'toast', args: { message: String(m) } }); };
     ctx.openExternal = function (u) { post({ method: 'openExternal', args: { url: String(u) } }); };
+    ctx.sdk = sdk;
+
+    // onLoad：比 mount 更早的时机，让插件注册扩展点
+    if (impl && typeof impl.onLoad === 'function') {
+      try {
+        impl.onLoad({ sdk: sdk, appVersion: c.appVersion || '', pluginDir: c.pluginDir || '' });
+      } catch (e) {
+        // onLoad 失败不该阻止 mount
+      }
+    }
 
     if (!impl || typeof impl.mount !== 'function') {
       throw new Error('插件没有调用 lw.register({ mount })');
@@ -202,6 +236,7 @@ var lw = (function () {
     register: register,
     call: call,
     on: on,
+    sdk: sdk,
     setTimeout: setTimeout,
     setInterval: setInterval,
     clearTimer: clearTimer,
