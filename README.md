@@ -1,11 +1,12 @@
 <div align="center">
 
-# Vectra
+<img src="https://img.macrostar.top/vectra2.png" alt="vectra" width="50%">
 
-**把小组件放回桌面。**
+# 山止组件 · Vectra
 
-一个 Windows 桌面磁贴程序：时钟、日历、待办、天气、歌词，安安静静地待在壁纸上，
-盖在它们上面的窗口一挪开就在那儿。
+**你的桌面，你自己来。**
+
+Windows 平台独占：构建你的新一代 Windows 桌面小组件
 
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![Dart](https://img.shields.io/badge/Dart-≥3.12-0175C2?logo=dart&logoColor=white)](https://dart.dev)
@@ -19,7 +20,7 @@
 
 [**下载最新版**](https://github.com/MacroSTAR-Org/Vectra/releases/latest) ·
 [**插件开发文档**](PLUGIN_DEV.md) ·
-[**问题反馈**](https://github.com/MacroSTAR-Org/Vectra/issues) ·
+[**问题反馈**](https://macrostar.feishu.cn/share/base/form/shrcnOjASFuDxU7CROCyuDbB4Ed) ·
 [**赞助作者**](https://www.ifdian.net/a/ms_xh)
 
 ---
@@ -198,7 +199,7 @@ windows/runner/      Win32：窗口层级、区域裁剪、抓屏、SMTC、启�
 
 MacroSTAR Studio 出品。
 
-天气数据来自 [Open-Meteo](https://open-meteo.com)。
+天气数据来自小米天气API。
 
 ## 赞助
 
