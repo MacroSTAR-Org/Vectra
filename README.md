@@ -97,64 +97,6 @@ node test/js/lrc_verify.js    # 歌词解析的纯函数验证
 > 完整的开发文档在 **[PLUGIN_DEV.md](PLUGIN_DEV.md)**：API 参考、节点类型速查、
 > 从零写一个插件的教程、常见错误对照表。
 
-最短的一个插件只需要两个文件：
-
-```
-my-widget/
-  manifest.json
-  index.js
-```
-
-**manifest.json**：
-
-```json
-{
-  "id": "my-widget",
-  "name": "我的组件",
-  "version": "1.0.0",
-  "entry": "index.js",
-  "sizes": ["2x2", "3x2"],
-  "defaultSize": "2x2",
-  "settings": [
-    { "key": "city", "type": "text", "label": "城市", "default": "北京" }
-  ]
-}
-```
-
-**index.js**：
-
-```js
-lw.register({
-  mount: function (ctx) {
-    var state = { text: '加载中…' };
-
-    function draw() {
-      ctx.render({
-        t: 'col', gap: 6, main: 'center', children: [
-          { t: 'text', v: state.text, size: 18, weight: 600 },
-          { t: 'text', v: ctx.settings.city, size: 13, opacity: 0.5 },
-        ]
-      });
-    }
-
-    function load() {
-      ctx.http.getJSON('https://example.com/api?city=' + ctx.settings.city)
-        .then(function (data) { state.text = data.summary; draw(); });
-    }
-
-    draw();
-    load();
-    var timer = ctx.interval(load, Math.max(5, ctx.settings.refreshMin) * 60000);
-    ctx.onCleanup(function () { ctx.clearTimer(timer); });
-  },
-
-  onSettingsChange: function () { /* 面板里改完设置会调到这里 */ }
-});
-```
-
-内置的 `clock` / `calendar` / `todo` / `weather` / `lyrics` 就是用这套 API 写的，
-在 `assets/plugins/` 下，可以直接抄。
-
 ## 项目结构
 
 ```
@@ -173,15 +115,7 @@ windows/runner/      Win32：窗口层级、区域裁剪、抓屏、SMTC、启�
 ## 贡献者
 
 <!-- ALL-CONTRIBUTORS-LIST:START -->
-<table>
-  <tbody>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/MacroSTAR-Org"><img src="https://github.com/Seren-Xia.png?s=100" width="100px;" alt=""/><br /><sub><b>夏辉 Seren Xia</b></sub></a><br /><a href="https://github.com/MacroSTAR-Org/Vectra/commits?author=Seren-Xia" title="Code">💻</a> <a href="#design-Seren-Xia" title="Design">🎨</a> <a href="#ideas-Seren-Xia" title="Ideas">💡</a> <a href="#infra-Seren-Xia" title="Infrastructure">🚇</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/KiriharaReina"><img src="https://github.com/kiriharareinanya-code.png?s=100" width="100px;" alt=""/><br /><sub><b>KiriharaReina</b></sub></a><br /><a href="https://github.com/MacroSTAR-Org/Vectra/commits?author=KiriharaReina" title="Code">💻</a> <a href="#design-KiriharaReina" title="Design">🎨</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/MichaelYoung"><img src="https://github.com/AChinaPerson.png?s=100" width="100px;" alt=""/><br /><sub><b>Michael Young</b></sub></a><br /><a href="https://github.com/MacroSTAR-Org/Vectra/commits?author=MichaelYoung" title="Code">💻</a></td>
-    </tr>
-  </tbody>
-</table>
+![Contributors](https://contrib.rocks/image?repo=MacroSTAR-Org/Vectra)
 <!-- ALL-CONTRIBUTORS-LIST:END -->
 
 ## 技术栈
