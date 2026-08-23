@@ -3,7 +3,8 @@
   "name": "快捷启动",
   "version": "1.1.0",
   "entry": "index.js",
-  "description": "常用程序一键启动",
+  "description": "常用程序一键启动：卡片翻面管理快捷方式，支持添加/重命名/排序/删除",
+  "author": "MacroSTAR",
   "icon": "🚀",
   "sizes": ["2x2", "3x2", "3x3", "4x3"],
   "defaultSize": "2x2"

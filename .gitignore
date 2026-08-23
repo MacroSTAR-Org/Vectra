@@ -10,3 +10,4 @@ installer/out/
 
 # 官网源码：独立的 git 仓库，不属于本项目
 MS-WEB/
+plugins/dist/

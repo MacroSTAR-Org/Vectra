@@ -21,7 +21,7 @@ function ok(cond, label) {
 // ---- 加载真实插件 ----
 let impl = null;
 global.lw = { register: function (x) { impl = x; } };
-require(path.join(__dirname, '..', '..', 'assets', 'plugins', 'launcher', 'index.js'));
+require(path.join(__dirname, '..', '..', 'plugins', 'launcher', 'index.js'));
 
 // ---- 仿 prelude 的 ctx：on 登记进 handlers 表，事件按 id 路由 ----
 function makeCtx(opts) {
