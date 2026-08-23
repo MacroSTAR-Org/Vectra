@@ -53,6 +53,21 @@ jobs:
             throw "Tag '$tag' already exists"
           }
 
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: tool/cliff.toml
+          args: --unreleased --tag ${{ steps.get_tag.outputs.tag_name }} --output CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload changelog
+        uses: actions/upload-artifact@v7
+        with:
+          name: Vectra-changelog-${{ github.sha }}
+          path: CHANGELOG.md
+          if-no-files-found: error
+
   build:
     needs: prepare
     runs-on: windows-latest
@@ -145,6 +160,12 @@ jobs:
           name: Vectra-${{ needs.prepare.outputs.version }}
           path: release-artifacts
 
+      - name: Download changelog
+        uses: actions/download-artifact@v8
+        with:
+          name: Vectra-changelog-${{ github.sha }}
+          path: changelog-artifacts
+
       - name: Prepare release body
         id: release_body
         shell: bash
@@ -157,13 +178,17 @@ jobs:
             echo "> [!CAUTION]"
             echo "> This is a preview release. Use it only for testing."
             echo ""
+          } > release-body.md
+          cat changelog-artifacts/CHANGELOG.md >> release-body.md
+          {
+            echo ""
             echo "## Files"
             echo ""
             echo "| File | Size |"
             echo "|------|------|"
             echo "| Vectra-$version-release.zip | $zip_size bytes |"
             echo "| $portable | $portable_size bytes |"
-          } > release-body.md
+          } >> release-body.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -177,5 +202,4 @@ jobs:
           files: |
             release-artifacts/Vectra-${{ needs.prepare.outputs.version }}-release.zip
             release-artifacts/${{ needs.build.outputs.portable_name }}
-          generate_release_notes: true
           fail_on_unmatched_files: false

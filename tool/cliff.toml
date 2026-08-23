@@ -1,0 +1,68 @@
+# git-cliff configuration
+# https://git-cliff.org/docs/configuration
+
+[changelog]
+body = """
+{% if version %}\
+    ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+    ## [unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+    ### {{ group | striptags | trim | upper_first }}
+    {% for commit in commits | unique(attribute="message") %}
+        * {{ commit.message | split(pat="\n") | first | trim }}\
+            {% if commit.remote.username %} by @{{ commit.remote.username }}{%- endif %}\
+            {% if commit.remote.pr_number %} in #{{ commit.remote.pr_number }}{%- endif %}
+    {% endfor %}
+{% endfor %}
+
+----
+
+- 该版本有 {{ statistics.commit_count }} 次提交
+{%- if statistics.links | length > 0 %}
+- 包含 {{ statistics.links | length }} 个关联议题和合并请求
+{%- endif %}
+
+"""
+trim = true
+render_always = true
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+require_conventional = false
+split_commits = false
+commit_preprocessors = []
+protect_breaking_commits = false
+
+commit_parsers = [
+    { message = "^(feat|add|新增|添加)", group = "<!-- 00 -->🚀 新增功能" },
+    { message = "^(fix|修复)", group = "<!-- 01 -->🐛 修复" },
+    { message = "^doc", group = "<!-- 05 -->📚 文档更改" },
+    { message = "^(improve|改进|优化)", group = "<!-- 03 -->⚡ 体验优化" },
+    { message = "^refactor", group = "<!-- 02 -->🚜 重构" },
+    { message = "^style", group = "<!-- 06 -->🎨 格式化" },
+    { message = "^(delete|删除|移除)", group = "<!-- 04 -->❌ 删除功能" },
+    { message = "^test", group = "<!-- 07 -->🧪 测试" },
+    { message = "^chore\\(release\\): prepare for", skip = true },
+    { message = "^chore\\(deps.*\\)", skip = true },
+    { message = "^chore\\(pr\\)", skip = true },
+    { message = "^chore\\(pull\\)", skip = true },
+    { message = "^Merge branch", skip = true },
+    { message = "^Merge pull request", group = "<!-- 11 -->🔀 合并请求" },
+    { message = "^chore|^ci", group = "<!-- 08 -->⚙️ 杂项" },
+    { body = ".*security", group = "<!-- 09 -->🛡️ 安全" },
+    { message = "^Revert", group = "<!-- 10 -->◀️ 回退" },
+    { message = "^(版本|version|更新版本号)", group = "<!-- 12 -->🎉 版本号更新" },
+    { message = ".*", group = "<!-- 13 -->💼 其他更改" },
+]
+filter_commits = false
+link_parsers = [
+    { pattern = "#(\\d+)", href = "https://github.com/MacroSTAR-Org/Vectra/issues/$1"},
+]
+use_branch_tags = false
+topo_order = false
+topo_order_commits = true
+sort_commits = "oldest"
+recurse_submodules = false
