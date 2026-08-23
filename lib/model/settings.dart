@@ -25,6 +25,8 @@ class AppSettings {
     this.marketBaseUrl = '',
     this.autoColorFromWallpaper = false,
     this.autoForegroundFromWallpaper = false,
+    this.autoDownloadUpdate = false,
+    this.updateSource = 'auto',
   });
 
   /// 网格单元边长（逻辑像素）
@@ -85,6 +87,13 @@ class AppSettings {
   /// 那个开关各自独立，可以只开一个。见 Wallpaper.dominantForeground。
   bool autoForegroundFromWallpaper;
 
+  /// 检查到新版本时自动在后台下载（下完等用户确认"重启以更新"）。
+  /// 关 = 手动点「立即更新」才开始下载。装不装始终由用户决定。
+  bool autoDownloadUpdate;
+
+  /// 应用更新检查的源：auto（Unisphere → GitHub 依次降级）/ unisphere / github。
+  String updateSource;
+
   Map<String, Object?> toJson() => {
         'gridCell': gridCell,
         'gridGap': gridGap,
@@ -102,6 +111,8 @@ class AppSettings {
         if (marketBaseUrl.isNotEmpty) 'marketBaseUrl': marketBaseUrl,
         'autoColorFromWallpaper': autoColorFromWallpaper,
         'autoForegroundFromWallpaper': autoForegroundFromWallpaper,
+        'autoDownloadUpdate': autoDownloadUpdate,
+        if (updateSource != 'auto') 'updateSource': updateSource,
       };
 
   static AppSettings fromJson(Map<String, Object?> j) => AppSettings(
@@ -122,5 +133,7 @@ class AppSettings {
         autoColorFromWallpaper: j['autoColorFromWallpaper'] as bool? ?? false,
         autoForegroundFromWallpaper:
             j['autoForegroundFromWallpaper'] as bool? ?? false,
+        autoDownloadUpdate: j['autoDownloadUpdate'] as bool? ?? false,
+        updateSource: j['updateSource'] as String? ?? 'auto',
       );
 }

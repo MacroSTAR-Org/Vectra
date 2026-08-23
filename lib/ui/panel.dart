@@ -21,9 +21,11 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/app_version.dart' show appVersion;
 import '../core/logger.dart';
 import '../core/paths.dart';
 import '../core/theme.dart';
+import '../core/updater.dart';
 import '../model/ai_settings.dart';
 import '../model/card.dart';
 import '../model/settings.dart';
@@ -107,6 +109,9 @@ class _PanelColors {
   /// 第三方徽章的底
   Color get badgeBg =>
       light ? Color(0x331565C0) : Color(0x334FC3F7);
+
+  /// 错误文字：更新失败之类。深浅色下都保证和背景拉开。
+  Color get danger => light ? Color(0xFFC62828) : Color(0xFFFF8A80);
 }
 
 class ControlPanel extends StatefulWidget {
@@ -123,6 +128,7 @@ class ControlPanel extends StatefulWidget {
     this.focusCardId,
     this.initialTab,
     this.onHotkeyChanged,
+    this.onInstallUpdate,
     this.embedded = true,
   });
 
@@ -153,6 +159,10 @@ class ControlPanel extends StatefulWidget {
 
   /// 快捷键改了要重新向系统注册
   final VoidCallback? onHotkeyChanged;
+
+  /// 安装应用更新（保存退出 → 拉起静默安装器）。由磁贴侧 AppRoot 提供，
+  /// 不传时（内嵌/测试）点了没反应。
+  final Future<bool> Function(String installerPath)? onInstallUpdate;
 
   @override
   State<ControlPanel> createState() => _ControlPanelState();
@@ -1556,6 +1566,121 @@ class _ControlPanelState extends State<ControlPanel> {
     );
   }
 
+  // ---------------- 软件更新 ----------------
+
+  String? get _updateCheckBusy =>
+      appUpdateState.value.phase == AppUpdatePhase.checking ||
+      appUpdateState.value.phase == AppUpdatePhase.downloading
+          ? 'busy'
+          : null;
+
+  /// 手动触发检查；开了自动下载时顺手把新版下下来（等用户确认重启）
+  Future<void> _checkUpdate() async {
+    if (_updateCheckBusy != null) return;
+    final s = _s;
+    final u = await runUpdateCheck(
+      currentVersion: appVersion,
+      sources: buildUpdateSources(
+          updateSource: s.updateSource, marketBaseUrl: s.marketBaseUrl),
+    );
+    if (u != null && s.autoDownloadUpdate) {
+      unawaited(_downloadUpdate(autoInstall: false));
+    }
+  }
+
+  /// 「立即更新」：下载 → 装好安装包直接进入安装（保存退出由 AppRoot 编排）
+  Future<void> _downloadAndInstall() async {
+    try {
+      final path = await downloadUpdate(dir: AppPaths.updateDir);
+      await widget.onInstallUpdate?.call(path);
+    } catch (_) {
+      // 状态机已标 failed 并保留更新对象，界面给出重试入口
+    }
+  }
+
+  Future<void> _downloadUpdate({required bool autoInstall}) async {
+    try {
+      final path = await downloadUpdate(dir: AppPaths.updateDir);
+      if (autoInstall) await widget.onInstallUpdate?.call(path);
+    } catch (_) {}
+  }
+
+  Widget _updateBody(AppUpdateSnapshot snap) {
+    const srcName = {
+      'unisphere': 'Unisphere',
+      'github': 'GitHub',
+    };
+    switch (snap.phase) {
+      case AppUpdatePhase.checking:
+        return Text('正在检查更新…',
+            style: TextStyle(fontSize: 12, color: _c.ink70));
+      case AppUpdatePhase.upToDate:
+        return Row(children: [
+          Icon(Icons.check_circle_outline, size: 14, color: _c.ink60),
+          const SizedBox(width: 6),
+          Text('已是最新版本', style: TextStyle(fontSize: 12, color: _c.ink70)),
+          const SizedBox(width: 12),
+          Button(onPressed: _checkUpdate, child: const Text('再查一次')),
+        ]);
+      case AppUpdatePhase.available:
+        final u = snap.update!;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('发现新版本 ${u.version}（来自 ${srcName[u.source] ?? u.source}）',
+                style: TextStyle(
+                    fontSize: 12, color: _c.ink70, fontWeight: FontWeight.w600)),
+            if (u.notes.trim().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(u.notes.trim(),
+                  style: TextStyle(fontSize: 10, color: _c.ink38, height: 1.5)),
+            ],
+            const SizedBox(height: 10),
+            Button(onPressed: _downloadAndInstall, child: const Text('立即更新')),
+          ],
+        );
+      case AppUpdatePhase.downloading:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                snap.progress < 0 ? '正在下载…' : '正在下载… ${(snap.progress * 100).toInt()}%',
+                style: TextStyle(fontSize: 12, color: _c.ink70)),
+            const SizedBox(height: 6),
+            ProgressBar(value: snap.progress < 0 ? null : snap.progress),
+          ],
+        );
+      case AppUpdatePhase.ready:
+        return Row(children: [
+          Icon(Icons.download_done_outlined, size: 14, color: _c.ink60),
+          const SizedBox(width: 6),
+          Text('新版本 ${snap.update!.version} 已就绪',
+              style: TextStyle(fontSize: 12, color: _c.ink70)),
+          const SizedBox(width: 12),
+          Button(
+            onPressed: () => widget.onInstallUpdate?.call(snap.installerPath!),
+            child: const Text('重启以更新'),
+          ),
+        ]);
+      case AppUpdatePhase.failed:
+        return Row(children: [
+          Expanded(
+            child: Text(snap.error ?? '更新失败',
+                style: TextStyle(fontSize: 12, color: _c.danger)),
+          ),
+          const SizedBox(width: 12),
+          Button(
+            onPressed: snap.update != null
+                ? () => _downloadAndInstall()
+                : _checkUpdate,
+            child: const Text('重试'),
+          ),
+        ]);
+      case AppUpdatePhase.idle:
+        return Button(onPressed: _checkUpdate, child: const Text('检查更新'));
+    }
+  }
+
   // ---------------- 关于 ----------------
 
   // ---------------- 「其他」页：开机自启 + 布局备份 ----------------
@@ -1564,6 +1689,70 @@ class _ControlPanelState extends State<ControlPanel> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 8, 28, 24),
       children: [
+        _group(title: '软件更新', icon: Icons.system_update_outlined, children: [
+          ValueListenableBuilder<AppUpdateSnapshot>(
+            valueListenable: appUpdateState,
+            builder: (context, snap, _) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('当前版本 Vectra $appVersion',
+                    style: TextStyle(fontSize: 11, color: _c.ink38)),
+                const SizedBox(height: 10),
+                _updateBody(snap),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          _switch('检测到新版本时自动下载（下完等你确认重启）',
+              _s.autoDownloadUpdate, (v) {
+            _s.autoDownloadUpdate = v;
+            _commit();
+          }),
+          const SizedBox(height: 4),
+          Row(children: [
+            Text('更新源',
+                style: TextStyle(fontSize: 12, color: _c.ink70)),
+            const SizedBox(width: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final (v, label) in const [
+                  ('auto', '自动'),
+                  ('unisphere', 'Unisphere'),
+                  ('github', 'GitHub'),
+                ])
+                  GestureDetector(
+                    onTap: () {
+                      _s.updateSource = v;
+                      _commit();
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: _s.updateSource == v ? _c.accentBg : _c.chipBg,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(label,
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: _s.updateSource == v
+                                  ? _c.accentSoft
+                                  : _c.ink54)),
+                    ),
+                  ),
+              ],
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Text(
+            '自动 = 先问 Unisphere（与插件市场同源），连不上再试 GitHub Releases。\n'
+            '更新装到程序所在目录，userdata 里的卡片和设置原样保留。',
+            style: TextStyle(fontSize: 11, color: _c.ink38, height: 1.5),
+          ),
+        ]),
         _group(title: '启动', icon: Icons.power_settings_new_outlined, children: [
           if (_autoStart == null)
             Padding(

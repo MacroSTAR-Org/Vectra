@@ -142,6 +142,9 @@ void main() {
     final btn = find.widgetWithText(Button, '打开日志目录');
     expect(btn, findsOneWidget);
 
+    // 「软件更新」组在日志组前面，600px 高的测试窗口里按钮可能在折叠线以下
+    await tester.ensureVisible(btn);
+    await tester.pumpAndSettle();
     await tester.tap(btn);
     await tester.pump();
 

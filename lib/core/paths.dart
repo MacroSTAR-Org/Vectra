@@ -34,6 +34,9 @@ class AppPaths {
   /// 第三方插件：`<exe>\userdata\plugins\<id>\`
   static String get pluginsDir => p.join(root, 'plugins');
 
+  /// 应用更新安装包的暂存目录：`<exe>\userdata\update\`
+  static String get updateDir => p.join(root, 'update');
+
   /// 日志目录：`<exe>\userdata\logs`。logger 按天切分，保留 7 天
   static String get logsDir => p.join(root, 'logs');
 

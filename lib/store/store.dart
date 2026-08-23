@@ -430,3 +430,17 @@ class Store {
     }
   }
 }
+
+/// 首次运行的默认布局。
+///
+/// 顶层函数而不是 main.dart 里的私有函数：测试要钉住"只播种内置插件"——
+/// launcher 已改为市场分发，误播种会让新用户第一眼看到"找不到插件"。
+List<WidgetCard> defaultLayout() {
+  final now = DateTime.now().millisecondsSinceEpoch;
+  return [
+    WidgetCard(id: 'clock-$now', pluginId: 'clock', x: 48, y: 48, size: '2x2', z: 1),
+    WidgetCard(id: 'calendar-$now', pluginId: 'calendar', x: 296, y: 48, size: '3x3', z: 2),
+    WidgetCard(id: 'todo-$now', pluginId: 'todo', x: 48, y: 296, size: '2x3', z: 3),
+    WidgetCard(id: 'weather-$now', pluginId: 'weather', x: 668, y: 48, size: '3x2', z: 4),
+  ];
+}

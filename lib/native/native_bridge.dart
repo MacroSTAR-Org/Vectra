@@ -146,6 +146,19 @@ class NativeBridge {
   static Future<bool> launchApp(String path) async =>
       await _channel.invokeMethod<bool>('launchApp', path) ?? false;
 
+  /// 拉起新版便携安装器做静默自更新（Inno /VERYSILENT /DIR=[installDir]）。
+  ///
+  /// 只负责"拉起安装器"：保存数据与退出进程由调用方编排（见 app_root 的
+  /// 更新流程）。安装器会等旧进程退出后覆盖文件，userdata 不在其打包范围。
+  static Future<bool> runUpdateInstaller(String installer, String installDir) async {
+    if (installer.isEmpty || installDir.isEmpty) return false;
+    return await _channel.invokeMethod<bool>('runUpdateInstaller', {
+          'installer': installer,
+          'dir': installDir,
+        }) ??
+        false;
+  }
+
   /// 当前所有显示器的物理矩形 + 设备名。多显示器适配用。
   static Future<List<MonitorRect>> getMonitors() async {
     final list =

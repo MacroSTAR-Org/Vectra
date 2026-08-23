@@ -481,4 +481,14 @@ void main() {
       expect(() => store.decodeConfig('不是 JSON'), throwsA(isA<Exception>()));
     });
   });
+
+  group('默认布局', () {
+    // launcher 已改为市场分发，误播种会让新用户第一眼看到"找不到插件"
+    test('只播种内置插件，不含 launcher', () {
+      final cards = defaultLayout();
+      expect(cards.map((c) => c.pluginId).toSet(),
+          {'clock', 'calendar', 'todo', 'weather'});
+      expect(cards.map((c) => c.pluginId), isNot(contains('launcher')));
+    });
+  });
 }

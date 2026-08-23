@@ -438,6 +438,32 @@ C++ → Dart：`setMethodCallHandler` 回调
 
 服务器可能返回 `http://host:443`（协议和端口矛盾）。客户端用 `resolveDownloadUrl()` 自动修正：同主机一律改用 base 的协议和端口。
 
+### 10.4 应用更新端点（服务端待实现）
+
+客户端的"检查更新"按下面这个协议问 Unisphere（实现在 `lib/core/updater.dart`）：
+
+```
+GET /api/v1/app/latest
+→ {
+    "version": "0.1.2.154",              // 四段版本号
+    "downloadUrl": "https://.../Vectra-0.1.2.154-便携版.exe",
+    "notes": "Markdown 更新日志",          // 可选
+    "sha256": "…"                          // 可选，v1 只记录不校验
+  }
+```
+
+规则：
+- 端点未部署 / 404 / 字段缺失 → 客户端按"没有更新"处理（auto 模式继续问 GitHub）
+- `downloadUrl` 同主机时协议端口跟着 base 走（复用市场的归一化）
+- 版本比较是四段语义化数值比较（`compareVersion`），"不高于当前"不算更新
+
+GitHub Releases 是兜底源：`api.github.com/repos/MacroSTAR-Org/Vectra/releases/latest`，
+tag 形如 `v0.1.2.154`，资产名 `Vectra-<版本>-便携版.exe`。
+
+安装方式：下载便携包到 `userdata\update\` → 保存退出 → 拉起安装器
+`/VERYSILENT /DIR=<程序目录>`（Inno 覆盖 exe/dll/data，不碰 userdata）→
+按 [Run] 自动拉起新版。
+
 ---
 
 ## 11. 错误上报

@@ -12,12 +12,18 @@ import 'dart:async' show runZonedGuarded;
 
 import 'core/app_version.dart';
 import 'core/logger.dart';
-import 'core/marketplace.dart' show marketMockEnabled, marketAutoInstallId, marketAutoOpenId, marketAutoUninstallId;
+import 'core/marketplace.dart'
+    show
+        checkPluginUpdates,
+        marketAutoInstallId,
+        marketAutoOpenId,
+        marketAutoUninstallId,
+        marketMockEnabled;
 import 'core/paths.dart';
 import 'core/sentry.dart' as sentry;
 import 'core/sentry_reporter.dart' show wireSentryReporter;
 import 'core/splash_gate.dart';
-import 'model/card.dart';
+import 'core/updater.dart';
 import 'native/native_bridge.dart';
 import 'plugin/registry.dart';
 import 'sidebar_main.dart' as sidebar;
@@ -102,7 +108,7 @@ Future<void> main(List<String> args) async {
   Log.i('app', '启动耗时 读配置 ${loadMs}ms / 扫插件 ${scanMs}ms');
 
   if (state.cards.isEmpty) {
-    state.cards.addAll(_defaultLayout());
+    state.cards.addAll(defaultLayout());
     await store.saveNow(state);
   }
 
@@ -115,6 +121,29 @@ Future<void> main(List<String> args) async {
   if (args.contains('--no-sentry')) {
     sentry.disableSentry();
   }
+
+  // 启动后延迟静默检查更新（应用 + 插件各一次）：
+  // 失败无声——连不上更新服务器是常态，不该给刚开机的用户弹任何东西。
+  // 应用更新检查到新版且开了自动下载时顺手下到 userdata\update\，装不装
+  // 仍由用户在设置面板里决定。
+  Future<void>.delayed(const Duration(seconds: 30), () {
+    checkPluginUpdates(
+      installed: {
+        for (final m in registry.list()) m.id: m.version,
+      },
+      baseUrl: state.settings.marketBaseUrl,
+    );
+    runUpdateCheck(
+      currentVersion: appVersion,
+      sources: buildUpdateSources(
+          updateSource: state.settings.updateSource,
+          marketBaseUrl: state.settings.marketBaseUrl),
+    ).then((u) {
+      if (u != null && state.settings.autoDownloadUpdate) {
+        downloadUpdate(dir: AppPaths.updateDir).catchError((_) => '');
+      }
+    });
+  });
 
   // 把 logger 的 Log.e 接到 sentry：init 之后、app 跑之前
   wireSentryReporter();
@@ -296,18 +325,6 @@ class _MultiViewRootState extends State<_MultiViewRoot> {
         ),
     ]);
   }
-}
-
-/// 首次运行的默认布局
-List<WidgetCard> _defaultLayout() {
-  final now = DateTime.now().millisecondsSinceEpoch;
-  return [
-    WidgetCard(id: 'clock-$now', pluginId: 'clock', x: 48, y: 48, size: '2x2', z: 1),
-    WidgetCard(id: 'calendar-$now', pluginId: 'calendar', x: 296, y: 48, size: '3x3', z: 2),
-    WidgetCard(id: 'todo-$now', pluginId: 'todo', x: 48, y: 296, size: '2x3', z: 3),
-    WidgetCard(id: 'weather-$now', pluginId: 'weather', x: 668, y: 48, size: '3x2', z: 4),
-    WidgetCard(id: 'launcher-$now', pluginId: 'launcher', x: 668, y: 296, size: '2x2', z: 5),
-  ];
 }
 
 class VectraApp extends StatelessWidget {

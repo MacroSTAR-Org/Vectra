@@ -13,6 +13,7 @@ import 'package:tray_manager/tray_manager.dart';
 import '../core/grid.dart';
 import '../core/logger.dart';
 import '../core/monitor.dart';
+import '../core/paths.dart';
 import '../core/snap.dart' as snap;
 import '../core/theme.dart';
 import '../model/ai_settings.dart';
@@ -384,17 +385,46 @@ class AppRootState extends State<AppRoot> with TrayListener {
         Log.i('app', '打开插件市场');
         NativeWindow.market.show();
       case 'quit':
-        // saveNow 而不是 save：去抖的 300ms 还没到就退出会丢掉最后一次改动。
-        // 插件数据是各自去抖的（待办勾选完立刻退出就会丢），一并刷盘。
-        await widget.store.saveNow(widget.state);
-        await widget.store.flushPluginData();
-        // 日志也是攒一批再写的，不刷这一下最后几行就随进程一起没了——
-        // 而"退出前发生了什么"恰恰是最需要看的那几行。
-        Log.i('app', '退出');
-        await Log.flushLogs();
-        await trayManager.destroy();
-        exit(0);
+        await quitAndExit();
     }
+  }
+
+  /// 退出前的收尾序列：刷配置、刷插件数据、刷日志。
+  ///
+  /// 托盘「退出」和应用更新安装共用——两条路都必须把去抖窗口内的改动
+  /// 落盘，更新重启丢用户数据比崩溃还糟。
+  Future<void> _flushBeforeExit() async {
+    // saveNow 而不是 save：去抖的 300ms 还没到就退出会丢掉最后一次改动。
+    // 插件数据是各自去抖的（待办勾选完立刻退出就会丢），一并刷盘。
+    await widget.store.saveNow(widget.state);
+    await widget.store.flushPluginData();
+    // 日志也是攒一批再写的，不刷这一下最后几行就随进程一起没了——
+    // 而"退出前发生了什么"恰恰是最需要看的那几行。
+    await Log.flushLogs();
+  }
+
+  Future<void> quitAndExit() async {
+    await _flushBeforeExit();
+    Log.i('app', '退出');
+    await trayManager.destroy();
+    exit(0);
+  }
+
+  /// 安装已下载好的应用更新：收尾落盘 → 拉起静默安装器 → 退出。
+  ///
+  /// Inno 安装器会等本进程退出后覆盖文件（不碰 userdata），解压完按
+  /// [Run] 自动拉起新版。失败时留在原进程里，状态机由 UI 标红重试。
+  Future<bool> installUpdate(String installerPath) async {
+    final ok = await NativeBridge.runUpdateInstaller(
+        installerPath, AppPaths.exeDir);
+    if (!ok) {
+      Log.e('update', '拉起更新安装器失败：$installerPath');
+      return false;
+    }
+    Log.i('update', '更新安装器已拉起，退出当前进程');
+    await _flushBeforeExit();
+    await trayManager.destroy();
+    exit(0);
   }
 
 

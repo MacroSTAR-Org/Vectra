@@ -102,6 +102,9 @@ class PanelApp extends StatelessWidget {
                   canAdd: (pluginId) =>
                       appKey.currentState?.canAddPlugin(pluginId) ?? true,
                   onRemove: (card) => appKey.currentState?.removeCard(card),
+                  // 应用更新：保存退出 + 拉起静默安装器都在磁贴那边编排
+                  onInstallUpdate: (path) async =>
+                      appKey.currentState?.installUpdate(path) ?? false,
                 ),
               ),
             ),

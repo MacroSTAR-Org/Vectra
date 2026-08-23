@@ -554,6 +554,46 @@ void HandleMethodCall(
     return;
   }
 
+  // 静默自更新：拉起新版便携安装器（Inno /VERYSILENT），旧进程随后自行退出。
+  //
+  // 参数：installer = 下载好的安装包绝对路径；dir = 程序所在目录（/DIR）。
+  // /DIR 带引号防路径空格；PrivilegesRequired=lowest 不需要提权。
+  // CloseApplications=yes 会让安装器等旧进程退出——Dart 侧在调用后马上
+  // exit(0)，正好衔接。返回值 > 32 才算拉起成功。
+  if (call.method_name() == "runUpdateInstaller") {
+    const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+    std::string installer, dir;
+    if (args) {
+      auto it = args->find(flutter::EncodableValue("installer"));
+      if (it != args->end()) {
+        if (const auto* s = std::get_if<std::string>(&it->second))
+          installer = *s;
+      }
+      it = args->find(flutter::EncodableValue("dir"));
+      if (it != args->end()) {
+        if (const auto* s = std::get_if<std::string>(&it->second)) dir = *s;
+      }
+    }
+    if (installer.empty() || dir.empty()) {
+      result->Error("bad_args", "runUpdateInstaller 需要 installer 与 dir");
+      return;
+    }
+    const std::wstring winstaller = Utf8ToWide(installer);
+    const std::wstring wdir = Utf8ToWide(dir);
+    const std::wstring params =
+        L"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=\"" + wdir + L"\"";
+    const auto rc = reinterpret_cast<intptr_t>(::ShellExecuteW(
+        nullptr, L"open", winstaller.c_str(), params.c_str(), wdir.c_str(),
+        SW_SHOWNORMAL));
+    if (rc <= 32) {
+      result->Error("run_failed",
+                    "ShellExecuteW 返回 " + std::to_string(rc));
+      return;
+    }
+    result->Success(true);
+    return;
+  }
+
   // 系统文件选择对话框。传入 {title, ext}，返回选中的文件路径（string）。
   // 用户取消时返回 null（Flutter 侧拿到 null）。
   if (call.method_name() == "pickFile") {

@@ -64,5 +64,8 @@ Source: "{#SrcDir}\native_assets.json"; DestDir: "{app}"; Flags: ignoreversion s
 Source: "{#SrcDir}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Run]
-; nowait + runasoriginaluser：解完直接把程序拉起来
-Filename: "{app}\{#AppExe}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+; 解完直接把程序拉起来。
+; 不能带 postinstall + skipifsilent：postinstall 条目只在向导完成页出现，
+; /VERYSILENT 静默更新（应用自更新走的就是这条路）下会被整个跳过，导致
+; 更新装完程序不自己起来。去掉这两个 flag 后 GUI 双击与静默更新都会执行。
+Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser
