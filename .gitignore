@@ -1,13 +1,36 @@
+# Flutter / Dart 生成文件
 build/
 .dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+coverage/
 *.iml
 
-# Visual Studio 打开项目时的本地设置
+# IDE 和编辑器私有配置
+.idea/
+.vscode/
 .vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
 
-# 打包产物：每次构建都会重出，没必要进仓库
+# 操作系统文件和临时文件
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*.log
+
+# 用户数据、构建产物和发布目录
+userdata/
 installer/out/
+plugins/dist/
 
 # 官网源码：独立的 git 仓库，不属于本项目
 MS-WEB/
-plugins/dist/
