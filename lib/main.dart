@@ -112,12 +112,12 @@ Future<void> main(List<String> args) async {
     await store.saveNow(state);
   }
 
-  // --test-sentry：主动抛一条错误，验证 Better Stack 能收到。
+  // --test-sentry：主动抛一条错误，验证 Sentry 能收到。
   if (args.contains('--test-sentry')) {
-    Log.e('app', '这是一条测试错误（--test-sentry），用来验证 Better Stack 上报');
+    Log.e('app', '这是一条测试错误（--test-sentry），用来验证 Sentry 上报');
   }
 
-  // --no-sentry：本地开发时不想把数据灌进 Better Stack 就加这个参数
+  // --no-sentry：本地开发时不想把数据灌进 Sentry 就加这个参数
   if (args.contains('--no-sentry')) {
     sentry.disableSentry();
   }
@@ -168,7 +168,7 @@ Future<void> main(List<String> args) async {
     } catch (e, st) {
       await sentry.reportExceptionToSentry(e, st);
     }
-    Log.i('app', '--test-sentry 已发出，检查 Better Stack 面板');
+    Log.i('app', '--test-sentry 已发出，检查 Sentry 面板');
   }
 
   // runWidget 而不是 runApp：这个进程要开两个窗口——覆盖整个虚拟屏幕的磁贴层，

@@ -468,9 +468,9 @@ tag 形如 `v0.1.2.154`，资产名 `Vectra-<版本>-便携版.exe`。
 
 ## 11. 错误上报
 
-### 11.1 Sentry（Better Stack）
+### 11.1 Sentry（Sentry SaaS）
 
-- DSN 写死在 `lib/core/sentry.dart`
+- DSN 写死在 `lib/core/sentry.dart`（macrostar-studio / flutter 项目）
 - 100% 采样
 - `--no-sentry` 关闭
 - `--test-sentry` 验证上报链路

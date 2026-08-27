@@ -1,4 +1,4 @@
-/// 错误上报：Better Stack（用 Sentry SDK 收集）。
+/// 错误上报：Sentry SaaS（用 Sentry Flutter SDK 收集）。
 ///
 /// 为什么单独一个文件：sentry_flutter 的初始化和后续 capture 要 import 一堆
 /// sentry 符号，集中在这里免得它们漏到 main.dart 和别的地方。对外只暴露
@@ -17,12 +17,9 @@ import 'app_version.dart';
 // 重新导出 SentryLevel，让 sentry_reporter.dart 不必直接 import sentry 包
 export 'package:sentry_flutter/sentry_flutter.dart' show SentryLevel;
 
-/// Better Stack 的 DSN。
-///
-/// 注意：服务端是 Better Stack（用了 Sentry 兼容协议），不是 Sentry SaaS。
-/// SDK 一样能用，只是数据落到 Better Stack 那边。
+/// Sentry SaaS 的 DSN（macrostar-studio / flutter 项目）。
 const String kSentryDsn =
-    'https://ozyJ4ZmQrTMW6pK1LvDcBvbC@s2692816.us-west-2a.betterstackdata.com/2692824';
+    'https://0344249b7329cebad006c9f6c7576c38@o4511980548194304.ingest.de.sentry.io/4511980557107280';
 
 /// 是否在上报。`--no-sentry` 时为 false，用于本地开发时不想污染数据。
 bool _enabled = true;
@@ -38,7 +35,7 @@ Future<void> initSentry() async {
   await SentryFlutter.init(
     (options) {
       options.dsn = kSentryDsn;
-      // release 用 appVersion（如 "0.1.2.132"）：Better Stack 面板能按版本筛
+      // release 用 appVersion（如 "0.1.2.132"）：Sentry 面板能按版本筛
       options.release = appVersion.isEmpty ? 'dev' : appVersion;
       // 环境：开发版标 dev，发布版标 production。当前没法在运行时区分，
       // 因为便携版和 `flutter run` 跑的是同一个 exe；先统一标 production，
@@ -65,7 +62,7 @@ Future<void> initSentry() async {
 
 /// 主动上报一条错误。给 Log.e 用。
 ///
-/// [level] 决定在 Better Stack 上的严重级别：
+/// [level] 决定在 Sentry 上的严重级别：
 ///   - error（默认）：红色，会触发告警
 ///   - warning：黄色，只记录
 ///   - info：灰色，纯留痕
@@ -84,7 +81,7 @@ Future<void> reportToSentry(
       withScope: (scope) {
         if (exception != null) {
           // 8.x: setExtra 已弃用，但 setContexts 是替代品且功能更强。
-          // 这里把异常对象放进去，Better Stack 面板上能看到。
+          // 这里把异常对象放进去，Sentry 面板上能看到。
           scope.setContexts('exception', exception.toString());
         }
         if (stack != null) {

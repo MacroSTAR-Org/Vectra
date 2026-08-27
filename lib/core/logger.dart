@@ -103,7 +103,7 @@ class Log {
       stdout.writeln(line);
     }
     _file?.write(line);
-    // 错误级同时上报 Better Stack。Log 这层只看"是不是 error 级"——
+    // 错误级同时上报 Sentry。Log 这层只看"是不是 error 级"——
     // 不在这里按模块挑食，所有 error 都值得看一眼。warning 暂不上报，
     // 避免接口偶发 403 之类把面板刷爆；需要的话以后再说。
     if (l == LogLevel.error) {
