@@ -190,7 +190,7 @@ class _ControlPanelState extends State<ControlPanel> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(28, 22, 28, 10),
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
           child: Text(title,
               style: FluentTheme.of(context).typography.title),
         ),
@@ -209,29 +209,30 @@ class _ControlPanelState extends State<ControlPanel> {
   }) {
     final theme = FluentTheme.of(context);
     return Card(
+      borderRadius: BorderRadius.circular(8),
+      backgroundColor: theme.resources.cardBackgroundFillColorDefault,
+      borderColor: theme.resources.cardStrokeColorDefault,
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(children: [
-                  if (icon != null) ...[
-                    Icon(icon, size: 18, color: theme.accentColor),
-                    const SizedBox(width: 8),
-                  ],
-                  Text(title, style: theme.typography.bodyStrong),
-                ]),
-                if (trailing != null) trailing,
-              ],
-            ),
-            const SizedBox(height: 12),
-            ...children,
-          ],
-        ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 18, color: theme.accentColor),
+                  const SizedBox(width: 8),
+                ],
+                Text(title, style: theme.typography.bodyStrong),
+              ]),
+              if (trailing != null) trailing,
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
       ),
     );
   }
@@ -248,7 +249,7 @@ class _ControlPanelState extends State<ControlPanel> {
               children: [
                 Text(label, style: theme.typography.body),
                 if (description != null)
-                  Text(description, style: theme.typography.caption),
+                  Text(description, style: _caption),
               ],
             ),
           ),
@@ -268,7 +269,7 @@ class _ControlPanelState extends State<ControlPanel> {
       child: Row(
         children: [
           SizedBox(
-            width: 180,
+            width: 176,
             child: Text(label, style: theme.typography.body),
           ),
           Expanded(
@@ -281,7 +282,7 @@ class _ControlPanelState extends State<ControlPanel> {
             ),
           ),
           SizedBox(
-            width: 52,
+            width: 48,
             child: Text(
               '${value.round()}$suffix',
               style: theme.typography.caption,
@@ -299,21 +300,23 @@ class _ControlPanelState extends State<ControlPanel> {
     final plugins = widget.registry.list();
     if (plugins.isEmpty) {
       return Center(
-        child: Text('没有已安装的插件', style: FluentTheme.of(context).typography.caption),
+        child: Text('没有已安装的插件', style: _caption),
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(28, 8, 28, 24),
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       itemCount: plugins.length,
       itemBuilder: (context, index) {
         final p = plugins[index];
         final added = widget.state.cards.where((c) => c.pluginId == p.id).length;
         final canAdd = widget.canAdd?.call(p.id) ?? true;
         return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
+          borderRadius: BorderRadius.circular(8),
+          backgroundColor: FluentTheme.of(context).resources.cardBackgroundFillColorDefault,
+          borderColor: FluentTheme.of(context).resources.cardStrokeColorDefault,
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
               children: [
                 Icon(FluentIcons.page, size: 24, color: FluentTheme.of(context).accentColor),
                 const SizedBox(width: 12),
@@ -322,7 +325,7 @@ class _ControlPanelState extends State<ControlPanel> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(p.name, style: FluentTheme.of(context).typography.bodyStrong),
-                      Text('${p.description}  ·  已放置 $added', style: FluentTheme.of(context).typography.caption),
+                      Text('${p.description}  ·  已放置 $added', style: _caption),
                     ],
                   ),
                 ),
@@ -331,7 +334,6 @@ class _ControlPanelState extends State<ControlPanel> {
                   child: Text(canAdd ? '添加' : '已满'),
                 ),
               ],
-            ),
           ),
         );
       },
@@ -344,20 +346,22 @@ class _ControlPanelState extends State<ControlPanel> {
     final cards = widget.state.cards;
     if (cards.isEmpty) {
       return Center(
-        child: Text('还没有放置任何卡片', style: FluentTheme.of(context).typography.caption),
+        child: Text('还没有放置任何卡片', style: _caption),
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(28, 8, 28, 24),
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       itemCount: cards.length,
       itemBuilder: (context, index) {
         final c = cards[index];
         final plugin = widget.registry[c.pluginId];
         return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
+          borderRadius: BorderRadius.circular(8),
+          backgroundColor: FluentTheme.of(context).resources.cardBackgroundFillColorDefault,
+          borderColor: FluentTheme.of(context).resources.cardStrokeColorDefault,
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
               children: [
                 Icon(FluentIcons.page, size: 24, color: FluentTheme.of(context).accentColor),
                 const SizedBox(width: 12),
@@ -366,7 +370,7 @@ class _ControlPanelState extends State<ControlPanel> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(plugin?.manifest.name ?? c.pluginId, style: FluentTheme.of(context).typography.bodyStrong),
-                      Text('尺寸 ${c.size}  ·  ${c.monitorId ?? "默认屏幕"}', style: FluentTheme.of(context).typography.caption),
+                      Text('尺寸 ${c.size}  ·  ${c.monitorId ?? "默认屏幕"}', style: _caption),
                     ],
                   ),
                 ),
@@ -375,7 +379,6 @@ class _ControlPanelState extends State<ControlPanel> {
                   onPressed: () => widget.onRemove(c),
                 ),
               ],
-            ),
           ),
         );
       },
@@ -386,7 +389,7 @@ class _ControlPanelState extends State<ControlPanel> {
 
   Widget _appearance() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(28, 8, 28, 24),
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       children: [
         // 布局与吸附
         _card(
@@ -459,7 +462,7 @@ class _ControlPanelState extends State<ControlPanel> {
               if (_s.material != 'mica')
                 _liveRefreshRadio()
               else
-                Text('云母只跟壁纸走，不需要刷新。', style: FluentTheme.of(context).typography.caption),
+                Text('云母只跟壁纸走，不需要刷新。', style: _caption),
             ],
           ],
         ),
@@ -494,8 +497,8 @@ class _ControlPanelState extends State<ControlPanel> {
                         _commit();
                       },
                       child: Container(
-                        width: 34,
-                        height: 34,
+                        width: 32,
+                        height: 32,
                         decoration: BoxDecoration(
                           color: Color(c),
                           borderRadius: BorderRadius.circular(8),
@@ -515,8 +518,8 @@ class _ControlPanelState extends State<ControlPanel> {
                   GestureDetector(
                     onTap: _openColorPicker,
                     child: Container(
-                      width: 34,
-                      height: 34,
+                      width: 32,
+                      height: 32,
                       decoration: BoxDecoration(
                         color: FluentTheme.of(context).resources.cardBackgroundFillColorDefault,
                         borderRadius: BorderRadius.circular(8),
@@ -640,7 +643,7 @@ class _ControlPanelState extends State<ControlPanel> {
   Widget _aiSettings() {
     final ai = widget.state.ai;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(28, 8, 28, 24),
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       children: [
         _card(
           title: '接口',
@@ -678,7 +681,7 @@ class _ControlPanelState extends State<ControlPanel> {
                 _commit();
               },
             ),
-            Text('改动自动保存', style: FluentTheme.of(context).typography.caption),
+            Text('改动自动保存', style: _caption),
           ],
         ),
 
@@ -781,7 +784,7 @@ class _ControlPanelState extends State<ControlPanel> {
 
   Widget _other() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(28, 8, 28, 24),
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       children: [
         _card(
           title: '软件更新',
@@ -811,7 +814,7 @@ class _ControlPanelState extends State<ControlPanel> {
               ),
             ),
             Text('自动 = 先问 Unisphere，连不上再试 GitHub Releases。',
-                style: FluentTheme.of(context).typography.caption),
+                style: _caption),
           ],
         ),
 
@@ -824,7 +827,7 @@ class _ControlPanelState extends State<ControlPanel> {
             else
               _toggleRow('开机时自动启动 Vectra', _autoStart!, (v) => _toggleAutoStart(v)),
             Text('登记在当前用户的启动项里，不需要管理员权限。',
-                style: FluentTheme.of(context).typography.caption),
+                style: _caption),
           ],
         ),
 
@@ -832,7 +835,7 @@ class _ControlPanelState extends State<ControlPanel> {
           title: '日志',
           icon: FluentIcons.page,
           children: [
-            Text(AppPaths.logsDir, style: FluentTheme.of(context).typography.caption),
+            Text(AppPaths.logsDir, style: _caption),
             const SizedBox(height: 8),
             Button(
               child: const Text('打开日志目录'),
@@ -890,7 +893,7 @@ class _ControlPanelState extends State<ControlPanel> {
 
   Widget _about() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(28, 8, 28, 24),
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       children: [
         _card(
           title: '关于',
@@ -910,6 +913,15 @@ class _ControlPanelState extends State<ControlPanel> {
     );
   }
 
+  /// WinUI3 caption：80% 透明度，辅助说明用
+  TextStyle? get _caption =>
+      FluentTheme.of(context).typography.caption?.copyWith(
+          color: FluentTheme.of(context)
+              .typography
+              .caption
+              ?.color
+              ?.withValues(alpha: 0.8));
+
   // ─── 通用 helper ───────────────────────────────────────────────
 
   Widget _textBoxRow(String label, String value, ValueChanged<String> onChanged,
@@ -920,7 +932,7 @@ class _ControlPanelState extends State<ControlPanel> {
       child: Row(
         children: [
           SizedBox(
-            width: 180,
+            width: 176,
             child: Text(label, style: theme.typography.body),
           ),
           Expanded(
@@ -946,11 +958,11 @@ class _ControlPanelState extends State<ControlPanel> {
       child: Row(
         children: [
           SizedBox(
-            width: 180,
+            width: 176,
             child: Text(label, style: theme.typography.body),
           ),
           Expanded(
-            child: Text(value, style: theme.typography.caption),
+            child: Text(value, style: _caption),
           ),
         ],
       ),
