@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="https://img.macrostar.top/Vectra02.png" alt="vectra" width="75%">
+  <img src="https://picui.ogmua.cn/s1/2026/08/27/6a903c1556980.webp" alt="vectra" width="75%">
 
 # 山止组件 · Vectra
 
