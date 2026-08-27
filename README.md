@@ -1,16 +1,12 @@
 <div align="center">
 
-<img src="https://img.macrostar.top/vectra2.png" alt="vectra" width="50%">
+图片站被K了。。。
 
 # 山止组件 · Vectra
 
 **你的桌面，你自己来。**
 
 Windows 平台独占：构建你的新一代 Windows 桌面小组件
-
->[!Caution]
->
->项目可能会经历一些重构，包括Unisphere在线服务不可用，对您造成的不便敬请谅解！
 
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![Dart](https://img.shields.io/badge/Dart-≥3.12-0175C2?logo=dart&logoColor=white)](https://dart.dev)
@@ -30,6 +26,10 @@ Windows 平台独占：构建你的新一代 Windows 桌面小组件
 ---
 
 </div>
+
+>[!Caution]
+>
+>项目可能会经历一些重构，包括Unisphere在线服务不可用，对您造成的不便敬请谅解！
 
 ## 特性一览
 
@@ -135,10 +135,14 @@ windows/runner/      Win32：窗口层级、区域裁剪、抓屏、SMTC、启�
 
 ## 许可与致谢
 
-MacroSTAR Studio 出品。
+⨝ MacroSTAR Studio 出品。
 
 天气数据来自小米天气API。
 
 ## 赞助
 
 觉得好用的话：[为爱发电](https://www.ifdian.net/a/ms_xh)
+
+<div align="center">
+  © 2024-2026 宏维星智网络技术工作室 保留所有权利
+</div>
