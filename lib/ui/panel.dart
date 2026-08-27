@@ -42,6 +42,9 @@ import 'wallpaper.dart';
 /// （主题蓝放 _PanelColors.accent 里按深浅色翻转）
 const double _kRadius = 14;
 
+/// ClassIsland SettingsExpander 风格：设置项之间的细分隔线
+const Color _settingDivider = Color(0x12000000);
+
 /// 面板自身的一套颜色，按深浅色翻转。
 ///
 /// 深色：深底 + 白字；浅色：浅底 + 近黑字。做法和卡片 _foreground 一致，
@@ -2079,11 +2082,15 @@ class _ControlPanelState extends State<ControlPanel> {
       return '${value.round()}$suffix';
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+    // ClassIsland SettingsExpander 风格：标题在左，滑块+数值在右，底部细线分隔
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: _settingDivider)),
+      ),
+      padding: const EdgeInsets.only(bottom: 8, top: 4),
       child: Row(children: [
         SizedBox(
-            width: 190,
+            width: 200,
             child: Text(label,
                 style: TextStyle(fontSize: 12, color: _c.ink70))),
         Expanded(
@@ -2105,8 +2112,11 @@ class _ControlPanelState extends State<ControlPanel> {
   }
 
   Widget _switch(String label, bool value, ValueChanged<bool> onChanged) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: _settingDivider)),
+      ),
+      padding: const EdgeInsets.only(bottom: 6, top: 2),
       child: ToggleSwitch(
         checked: value,
         onChanged: onChanged,
@@ -2116,7 +2126,7 @@ class _ControlPanelState extends State<ControlPanel> {
     );
   }
 
-  /// 分组卡片：圆角 + 半透明底 + 小节标题
+  /// 分组卡片：圆角 + 半透明底 + 小节标题。子项自带底部细线分隔。
   Widget _group({
     required String title,
     IconData? icon,
@@ -2124,7 +2134,7 @@ class _ControlPanelState extends State<ControlPanel> {
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
       decoration: BoxDecoration(
         color: _c.card,
         borderRadius: BorderRadius.circular(_kRadius),
