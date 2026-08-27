@@ -8,6 +8,10 @@
 
 Windows 平台独占：构建你的新一代 Windows 桌面小组件
 
+>[!Caution]
+>
+>项目可能会经历一些重构，包括Unisphere在线服务不可用，对您造成的不便敬请谅解！
+
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![Dart](https://img.shields.io/badge/Dart-≥3.12-0175C2?logo=dart&logoColor=white)](https://dart.dev)
 [![Windows](https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows&logoColor=white)](https://flutter.dev)
