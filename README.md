@@ -1,6 +1,6 @@
 <div align="center">
 
-图片站被K了。。。
+  <img src="https://img.macrostar.top/Vectra02.png" alt="vectra" width="75%">
 
 # 山止组件 · Vectra
 
