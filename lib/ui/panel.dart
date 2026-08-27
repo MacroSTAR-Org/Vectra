@@ -174,14 +174,6 @@ class ControlPanel extends StatefulWidget {
 class _ControlPanelState extends State<ControlPanel> {
   late int _tab = widget.initialTab ?? (widget.focusCardId != null ? 1 : 0);
 
-  /// 导航栏是展开还是收成图标条。
-  ///
-  /// 必须自己存着：NavigationView 的收起按钮只通过 onDisplayModeChanged
-  /// 把新模式**报出来**，它自己不留状态。之前这里给的是写死的
-  /// PaneDisplayMode.expanded，按钮按下去内部虽然变了，可下一次重建又被
-  /// 这个常量按回展开——表现就是"点了没反应"。
-  PaneDisplayMode _paneMode = PaneDisplayMode.expanded;
-
   /// 关于页的版本信息；异步加载，未就绪时显示"获取中…"
   PackageInfo? _pkgInfo;
 
@@ -288,9 +280,9 @@ class _ControlPanelState extends State<ControlPanel> {
 
   @override
   Widget build(BuildContext context) {
-    // WinUI 3 标准布局：无边框自绘标题栏（最顶）+ NavigationView（左侧导航
-    // 窗格 + 右侧内容）。NavigationView 的 body 按选中项构建（keyed 切换），
-    // 不会像 TabView/IndexedStack 那样同时建多页，安全的。
+    // WinUI 3 标准布局：无边框自绘标题栏（最顶）+ 顶部 TabView（fluent_ui
+    // 原生控件）。TabView 的内容按选中 tab 构建（keyed 切换），不会像
+    // IndexedStack 那样同时建多页，安全的。
     final body = Column(
       children: [
         // 无边框窗口的自绘标题栏；内嵌模式没有独立窗口，不需要
@@ -356,64 +348,34 @@ class _ControlPanelState extends State<ControlPanel> {
     );
   }
 
-  // ---------------- 左侧导航（NavigationView） ----------------
+  // ---------------- 顶部 Tab 导航（fluent_ui TabView） ----------------
 
   Widget _navigation() {
-    return NavigationView(
-      // 收起按钮只负责把新模式报出来，记不记得住得靠调用方。
-      // 这个回调挂在 NavigationView 上，不是 NavigationPane 上。
-      onDisplayModeChanged: (m) {
-        if (m != _paneMode) setState(() => _paneMode = m);
-      },
-      pane: NavigationPane(
-        selected: _tab,
-        onChanged: (i) => setState(() => _tab = i),
-        displayMode: _paneMode,
-        size: const NavigationPaneSize(openWidth: 220),
-        // 品牌行不放了：标题栏已有「Vectra 设置」，导航栏顶部再放一遍重复
-        items: [
-          PaneItem(
-            icon: Icon(Icons.widgets_outlined, size: 18),
-            title: Text('组件库'),
-            body: _pageFrame('组件库', _library()),
-          ),
-          PaneItem(
-            icon: Icon(Icons.grid_view_outlined, size: 18),
-            title: Text('已放置 ${widget.state.cards.length}'),
-            body: _pageFrame('已放置', _placed()),
-          ),
-          PaneItem(
-            icon: Icon(Icons.palette_outlined, size: 18),
-            title: Text('外观'),
-            body: _pageFrame('外观', _appearance()),
-          ),
-          PaneItem(
-            icon: Icon(Icons.smart_toy_outlined, size: 18),
-            title: Text('AI'),
-            body: _pageFrame('AI', _aiSettings()),
-          ),
-          // 放在 AI 之后：AI 仍是索引 3，托盘的 openPanel(tab: 3) 不受影响
-          PaneItem(
-            icon: Icon(Icons.tune_outlined, size: 18),
-            title: Text('其他'),
-            body: _pageFrame('其他', _other()),
-          ),
-        ],
-        // 底部固定项：关于页固定在标签栏下方，不随 items 区滚动
-        footerItems: [
-          if (widget.embedded)
-            PaneItemAction(
-              icon: Icon(Icons.close, size: 18),
-              title: Text('关闭'),
-              onTap: widget.onClose,
+    final labels = <(String, IconData, Widget)>[
+      ('组件库', Icons.widgets_outlined, _library()),
+      ('已放置 ${widget.state.cards.length}', Icons.grid_view_outlined, _placed()),
+      ('外观', Icons.palette_outlined, _appearance()),
+      ('AI', Icons.smart_toy_outlined, _aiSettings()),
+      ('其他', Icons.tune_outlined, _other()),
+    ];
+
+    return TabView(
+      currentIndex: _tab,
+      onChanged: (i) => setState(() => _tab = i),
+      tabWidthBehavior: TabWidthBehavior.equal,
+      closeButtonVisibility: CloseButtonVisibilityMode.never,
+      tabs: [
+        for (var i = 0; i < labels.length; i++)
+          Tab(
+            text: Text(labels[i].$1),
+            icon: Icon(labels[i].$2, size: 16),
+            // 内容按选中 tab 构建；keyed 切换，不一次建 5 页
+            body: KeyedSubtree(
+              key: ValueKey('tab:$i'),
+              child: _pageFrame(labels[i].$1, labels[i].$3),
             ),
-          PaneItem(
-            icon: Icon(Icons.info_outline, size: 18),
-            title: Text('关于'),
-            body: _pageFrame('关于', _about()),
           ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -1098,89 +1060,59 @@ class _ControlPanelState extends State<ControlPanel> {
       ('light', '浅色'),
       ('dark', '深色'),
     ];
+    // fluent_ui 原生 RadioGroup + RadioButton，横向排布
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(children: [
-        for (final m in options)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: GestureDetector(
-              onTap: () {
-                _s.theme = m.$1;
-                _commit();
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _s.theme == m.$1
-                      ? _c.accentBg
-                      : _c.chipBg,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: _s.theme == m.$1
-                        ? _c.accentBorder
-                        : _c.chipBg,
-                  ),
-                ),
-                child: Text(m.$2,
-                    style: TextStyle(
-                        fontSize: 11.5,
-                        color: _s.theme == m.$1 ? _c.accentSoft : _c.ink54)),
+      padding: const EdgeInsets.only(bottom: 6, top: 2),
+      child: RadioGroup<String>(
+        groupValue: _s.theme,
+        onChanged: (v) {
+          if (v != null) {
+            _s.theme = v;
+            _commit();
+          }
+        },
+        child: Row(children: [
+          for (final m in options)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: RadioButton<String>(
+                value: m.$1,
+                content: Text(m.$2,
+                    style: TextStyle(fontSize: 12, color: _c.ink70)),
               ),
             ),
-          ),
-      ]),
+        ]),
+      ),
     );
   }
 
   Widget _materialPicker() {
+    // fluent_ui 原生 RadioGroup + RadioButton，横向排布
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('材质', style: TextStyle(fontSize: 12, color: _c.ink70)),
-          const SizedBox(height: 8),
-          Row(children: [
-            for (final m in const [
-              ('opaque', '不透明'),
-              ('acrylic', '毛玻璃'),
-              ('mica', '云母'),
-            ])
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: GestureDetector(
-                  onTap: () {
-                    _s.material = m.$1;
-                    _commit();
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: _s.material == m.$1
-                          ? _c.accentBg
-                          : _c.chipBg,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _s.material == m.$1
-                            ? _c.accentBorder
-                            : _c.chipBg,
-                      ),
-                    ),
-                    child: Text(m.$2,
-                        style: TextStyle(
-                            fontSize: 11.5,
-                            color: _s.material == m.$1
-                                ? _c.accentSoft
-                                : _c.ink54)),
-                  ),
-                ),
+      padding: const EdgeInsets.only(bottom: 6, top: 2),
+      child: RadioGroup<String>(
+        groupValue: _s.material,
+        onChanged: (v) {
+          if (v != null) {
+            _s.material = v;
+            _commit();
+          }
+        },
+        child: Row(children: [
+          for (final m in const [
+            ('opaque', '不透明'),
+            ('acrylic', '毛玻璃'),
+            ('mica', '云母'),
+          ])
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: RadioButton<String>(
+                value: m.$1,
+                content: Text(m.$2,
+                    style: TextStyle(fontSize: 12, color: _c.ink70)),
               ),
-          ]),
-        ],
+            ),
+        ]),
       ),
     );
   }
@@ -1195,45 +1127,29 @@ class _ControlPanelState extends State<ControlPanel> {
       (33, '30 fps'),
       (16, '60 fps'),
     ];
-    // 内容区左侧被导航窗格占了，宽度有限：标签一行、选项 Wrap 自动换行
+    // fluent_ui 原生 RadioGroup + RadioButton，换行排布
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('动态壁纸刷新',
-              style: TextStyle(fontSize: 12, color: _c.ink70)),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final o in options)
-                GestureDetector(
-                  onTap: () {
-                    _s.liveRefreshMs = o.$1;
-                    _commit();
-                  },
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: _s.liveRefreshMs == o.$1
-                          ? _c.accentBg
-                          : _c.chipBg,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(o.$2,
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: _s.liveRefreshMs == o.$1
-                                ? _c.accentSoft
-                                : _c.ink54)),
-                  ),
-                ),
-            ],
-          ),
-        ],
+      padding: const EdgeInsets.only(bottom: 6, top: 2),
+      child: RadioGroup<int>(
+        groupValue: _s.liveRefreshMs,
+        onChanged: (v) {
+          if (v != null) {
+            _s.liveRefreshMs = v;
+            _commit();
+          }
+        },
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 2,
+          children: [
+            for (final o in options)
+              RadioButton<int>(
+                value: o.$1,
+                content: Text(o.$2,
+                    style: TextStyle(fontSize: 12, color: _c.ink70)),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1716,37 +1632,31 @@ class _ControlPanelState extends State<ControlPanel> {
             Text('更新源',
                 style: TextStyle(fontSize: 12, color: _c.ink70)),
             const SizedBox(width: 12),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final (v, label) in const [
-                  ('auto', '自动'),
-                  ('unisphere', 'Unisphere'),
-                  ('github', 'GitHub'),
-                ])
-                  GestureDetector(
-                    onTap: () {
-                      _s.updateSource = v;
-                      _commit();
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: _s.updateSource == v ? _c.accentBg : _c.chipBg,
-                        borderRadius: BorderRadius.circular(6),
+            Expanded(
+              child: RadioGroup<String>(
+                groupValue: _s.updateSource,
+                onChanged: (v) {
+                  if (v != null) {
+                    _s.updateSource = v;
+                    _commit();
+                  }
+                },
+                child: Row(children: [
+                  for (final (v, label) in const [
+                    ('auto', '自动'),
+                    ('unisphere', 'Unisphere'),
+                    ('github', 'GitHub'),
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: RadioButton<String>(
+                        value: v,
+                        content: Text(label,
+                            style: TextStyle(fontSize: 12, color: _c.ink70)),
                       ),
-                      child: Text(label,
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: _s.updateSource == v
-                                  ? _c.accentSoft
-                                  : _c.ink54)),
                     ),
-                  ),
-              ],
+                ]),
+              ),
             ),
           ]),
           const SizedBox(height: 6),
@@ -1837,6 +1747,27 @@ class _ControlPanelState extends State<ControlPanel> {
               ),
             ]),
           ],
+        ]),
+        _group(title: '关于', icon: Icons.info_outline, children: [
+          _aboutRow('版本', _pkgInfo == null
+              ? '获取中…'
+              : 'v${_pkgInfo!.version}.${_pkgInfo!.buildNumber}'),
+          _aboutRow('作者', 'MacroSTAR Studio © 2026'),
+          _aboutRow('数据', widget.store.dir, monospace: true),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(children: [
+              const SizedBox(width: 2),
+              Icon(Icons.link, size: 14, color: _c.accentIcon),
+              const SizedBox(width: 10),
+              HyperlinkButton(
+                onPressed: () => launchUrl(
+                    Uri.parse('https://github.com/MacroSTAR-Org/Vectra')),
+                child: Text('github.com/MacroSTAR-Org/Vectra',
+                    style: TextStyle(fontSize: 12, color: _c.accent)),
+              ),
+            ]),
+          ),
         ]),
       ],
     );
@@ -1969,64 +1900,7 @@ class _ControlPanelState extends State<ControlPanel> {
     );
   }
 
-  Widget _about() {
-    final info = _pkgInfo;
-    // 显示成四段，和 exe 属性里看到的文件版本一致，报问题时好对齐
-    final version = info == null
-        ? '获取中…'
-        : 'v${info.version}.${info.buildNumber}';
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(28, 8, 28, 24),
-      children: [
-        const SizedBox(height: 28),
-        Center(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: Image.asset('assets/logo.png',
-                width: 72, height: 72, filterQuality: FilterQuality.medium),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Center(
-          child: Text('Vectra',
-              style: TextStyle(
-                  fontSize: 24, fontWeight: FontWeight.w600, color: _c.ink)),
-        ),
-        const SizedBox(height: 6),
-        Center(
-          child: Text('桌面磁贴小组件',
-              style: TextStyle(fontSize: 13, color: _c.ink54)),
-        ),
-        const SizedBox(height: 4),
-        Center(
-          child: Text(version,
-              style: TextStyle(fontSize: 12, color: _c.ink38)),
-        ),
-        const SizedBox(height: 28),
-        _group(title: '信息', icon: Icons.info_outline, children: [
-          _aboutRow('作者', 'MacroSTAR Studio © 2026'),
-          _aboutRow('数据', widget.store.dir, monospace: true),
-        ]),
-        _group(title: '项目', icon: Icons.link_outlined, children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Row(children: [
-              const SizedBox(width: 2),
-              Icon(Icons.link, size: 14, color: _c.accentIcon),
-              const SizedBox(width: 10),
-              HyperlinkButton(
-                onPressed: () => launchUrl(
-                    Uri.parse('https://github.com/MacroSTAR-Org/Vectra')),
-                child: Text('github.com/MacroSTAR-Org/Vectra',
-                    style: TextStyle(fontSize: 12, color: _c.accent)),
-              ),
-            ]),
-          ),
-        ]),
-      ],
-    );
-  }
-
+  
   /// 一行只读路径。面板可以被拖得很窄，所以必须能换行——
   /// 路径动辄上百字符，塞进不换行的 Text 会直接把布局撑破。
   Widget _pathLine(String path) {
