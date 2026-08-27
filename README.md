@@ -30,6 +30,10 @@ Windows 平台独占：构建你的新一代 Windows 桌面小组件
 >[!Caution]
 >
 >项目可能会经历一些重构，包括Unisphere在线服务不可用，对您造成的不便敬请谅解！
+>
+>我们更新了新的 Sentry 提供方，自 2026/8/27 起，由 Functional Software, Inc. 提供 Sentry 的服务支持。原先由 Better Stack, Inc. 提供的服务已不可用，尽管数据已经上传。但请放心，我们已对所有数据进行脱敏处理，并完整删除。
+>
+>您收到这条通知是因为您使用了我们的服务，我们有权及义务告知您此项事件。
 
 ## 特性一览
 
@@ -130,7 +134,7 @@ windows/runner/      Win32：窗口层级、区域裁剪、抓屏、SMTC、启�
 | 桌面集成 | Win32 API（窗口层级、区域裁剪、SMTC 媒体控制） |
 | 插件引擎 | [QuickJS](https://bellard.org/quickjs/)（沙箱化 JS 运行时） |
 | 壁纸抓取 | Windows Desktop Capture API（C++） |
-| 错误上报 | [Sentry](https://sentry.io) / Better Stack |
+| 错误上报 | [Sentry](https://sentry.io) / Functional Software, Inc. |
 | AI 侧边栏 | 多引擎架构（可接入 OpenAI / Claude / 本地模型） |
 
 ## 许可与致谢
@@ -138,6 +142,8 @@ windows/runner/      Win32：窗口层级、区域裁剪、抓屏、SMTC、启�
 ⨝ MacroSTAR Studio 出品。
 
 天气数据来自小米天气API。
+
+Functional Software, Inc. 提供 Sentry 遥测服务。
 
 ## 赞助
 
