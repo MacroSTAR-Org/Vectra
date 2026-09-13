@@ -5,13 +5,60 @@
 /// 而投影恰好落在区域之外，必然被裁掉。
 library;
 
+import 'dart:io';
 import 'dart:ui' as ui;
+
+import 'package:path/path.dart' as p;
 
 import 'package:flutter/material.dart';
 
 import '../model/card.dart';
 import '../model/settings.dart';
 import 'wallpaper.dart';
+
+/// 自定义背景图的平均亮度缓存（PluginImages 同款模式）：
+/// path → 0~1。解码是异步的，算完 revision +1 让卡片重建一次。
+/// 只缓存文件路径（一张卡一张图），量级可忽略。
+class _CardBg {
+  static final _lum = <String, double>{};
+  static final revision = ValueNotifier<int>(0);
+
+  static double? luminance(String path) => _lum[path];
+
+  static Future<void> ensure(String path) async {
+    if (_lum.containsKey(path)) return;
+    _lum[path] = 0.5; // 占位：防同一张图并发重复解码
+    try {
+      final bytes = await File(path).readAsBytes();
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      final codec = await ui.instantiateImageCodecWithSize(
+        buffer,
+        getTargetSize: (w, h) =>
+            const ui.TargetImageSize(width: 32, height: 32),
+      );
+      final frame = await codec.getNextFrame();
+      codec.dispose();
+      final data = await frame.image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      frame.image.dispose();
+      var total = 0.0;
+      var n = 0;
+      if (data != null) {
+        final px = data.buffer.asUint8List();
+        for (var i = 0; i + 3 < px.length; i += 4) {
+          total +=
+              (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255;
+          n++;
+        }
+      }
+      _lum[path] = n == 0 ? 0.5 : total / n;
+    } catch (_) {
+      _lum[path] = 0.5;
+    }
+    revision.value++;
+  }
+}
 
 class CardView extends StatelessWidget {
   const CardView({
@@ -22,6 +69,7 @@ class CardView extends StatelessWidget {
     required this.height,
     required this.editing,
     required this.child,
+    required this.dataDir,
   });
 
   final WidgetCard card;
@@ -30,6 +78,25 @@ class CardView extends StatelessWidget {
   final double height;
   final bool editing;
   final Widget child;
+
+  /// 用户数据目录：自定义背景图存放在 <dataDir>/bg/ 下
+  final String dataDir;
+
+  /// 面板读取：某张自定义背景图的实测亮度（还没算出来时是 null）。
+  /// 配合 [bgRevision] 做状态行刷新。
+  static double? bgLuminance(String path) => _CardBg.luminance(path);
+
+  /// 亮度缓存更新通知——面板的状态行监听它，算完自动刷新文字。
+  static ValueNotifier<int> get bgRevision => _CardBg.revision;
+
+  /// 本卡的自定义背景图（card.settings['bgImage']，bg/ 下的文件名）。
+  /// 没设置就是 null，走原来的云母/毛玻璃/纯色材质。
+  File? get _bgImageFile {
+    final name = card.settings['bgImage'] as String?;
+    if (name == null || name.isEmpty) return null;
+    final f = File(p.join(dataDir, 'bg', name));
+    return f.existsSync() ? f : null;
+  }
 
   /// 卡片内容区四周的留白。插件运行时把"卡片外框尺寸"当成 ctx.size 报给
   /// JS 之前，必须先扣掉这一圈，否则插件按尺寸算自己的布局时会拿到一个
@@ -63,6 +130,11 @@ class CardView extends StatelessWidget {
   ///
   /// 主题设置仍然管着设置窗口和 AI 侧边栏的明暗，只是不再插手卡片。
   bool get _brightBackdrop {
+    final bgf = _bgImageFile;
+    if (bgf != null) {
+      final l = _CardBg.luminance(bgf.path);
+      if (l != null) return l > 0.5;
+    }
     if (settings.material == 'opaque') {
       return _baseColor.computeLuminance() > 0.5;
     }
@@ -71,7 +143,8 @@ class CardView extends StatelessWidget {
       // "白底 + 云母 = 永远黑字看不清" 的根因：底色只决定色板的色相和明暗
       // 档位，真正贴在屏幕上的是"色板 @ alpha 叠在壁纸上"的结果。
       final a = _micaAlpha;
-      final composite = _micaBase.computeLuminance() * a +
+      final composite =
+          _micaBase.computeLuminance() * a +
           Wallpaper.brightness.value * (1 - a);
       return composite > 0.5;
     }
@@ -176,107 +249,133 @@ class CardView extends StatelessWidget {
     // 这里**不再**监听 systemBrightness：卡片明暗只由壁纸和材质决定，
     // 系统深浅色切换不该让卡片重建（见 _brightBackdrop 的说明）。
     return AnimatedBuilder(
-      animation: Listenable.merge(
-          [Wallpaper.brightness, Wallpaper.dominantColor, Wallpaper.dominantForeground]),
-      builder: (context, _) => SizedBox(
-        width: width,
-        height: height,
-        child: Stack(
-          children: [
-          // 毛玻璃：把预先模糊好的壁纸按本卡片的屏幕位置反向偏移贴上，
-          // 再由外层 ClipRRect 裁成卡片形状 —— 看起来就是"透过卡片看到
-          // 被磨砂的壁纸"。壁纸是静态的，所以这里每帧只是一次普通贴图。
-          if (settings.material != 'opaque')
-            ClipRRect(
-              borderRadius: BorderRadius.circular(settings.cardRadius),
-              child: SizedBox(
-                width: width,
-                height: height,
-                child: ValueListenableBuilder<ui.Image?>(
-                  valueListenable: Wallpaper.image,
-                  builder: (context, img, _) {
-                    if (img == null) return const SizedBox.shrink();
-                    final s = 1 / Wallpaper.scale;
-                    final w = RawImage(
-                      image: img,
-                      width: img.width * s,
-                      height: img.height * s,
-                      fit: BoxFit.fill,
-                      filterQuality: FilterQuality.low,
-                    );
-                    // 云母不糊壁纸：壁纸压到半透明当色调底子，上面再盖那层色板。
-                    // 亚克力保持全透，那才是"透过玻璃看桌面"。
-                    //
-                    // 透出强度跟着色板厚度走：色板越厚，下面这层露出来的越少，
-                    // 留太多只是白白把浅色板拖灰。
-                    return Opacity(
-                      opacity: settings.material == 'mica'
-                          ? (1 - _micaAlpha).clamp(0.30, 0.55)
-                          : 1.0,
-                      child: OverflowBox(
-                        alignment: Alignment.topLeft,
-                        maxWidth: double.infinity,
-                        maxHeight: double.infinity,
-                        child: Transform.translate(
-                          offset: Offset(-card.x, -card.y),
-                          child: w,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          // 卡片本体
-          ClipRRect(
-            borderRadius: BorderRadius.circular(settings.cardRadius),
-            child: Container(
-              width: width,
-              height: height,
-              decoration: BoxDecoration(
-                // 毛玻璃模式下底色只是一层染色，模糊的壁纸在它下面
-                color: _fill,
-                // 整圈细边框，不加任何高光/渐变。
-                // 这不是阴影：阴影要画在卡片外面，而窗口区域正好裁在卡片边界上，
-                // 画了也会被切掉，所以边框画在卡片内部。
-                border: Border.all(color: _edge, width: 1),
-                borderRadius: BorderRadius.circular(settings.cardRadius),
-              ),
-              padding: contentPadding,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: DefaultTextStyle(
-                      style: TextStyle(
-                        color: _foreground,
-                        fontSize: 13,
-                        // 这里的 DefaultTextStyle 是替换式的（不带 merge），会把
-                        // 主题里传下来的 fontFamily 冲掉，必须显式带上全局字体
-                        fontFamily: 'TsukushiBMaru',
-                        decoration: TextDecoration.none,
-                      ),
-                      child: child,
+      animation: Listenable.merge([
+        Wallpaper.brightness,
+        Wallpaper.dominantColor,
+        Wallpaper.dominantForeground,
+        _CardBg.revision,
+      ]),
+      builder: (context, _) {
+        final bgFile = _bgImageFile;
+        if (bgFile != null) _CardBg.ensure(bgFile.path);
+        return SizedBox(
+          width: width,
+          height: height,
+          child: Stack(
+            children: [
+              // 毛玻璃：把预先模糊好的壁纸按本卡片的屏幕位置反向偏移贴上，
+              // 再由外层 ClipRRect 裁成卡片形状 —— 看起来就是"透过卡片看到
+              // 被磨砂的壁纸"。壁纸是静态的，所以这里每帧只是一次普通贴图。
+              if (bgFile != null)
+                // 自定义背景图：cover 裁满卡片，替代云母/毛玻璃整层
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(settings.cardRadius),
+                    child: Image.file(
+                      bgFile,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      filterQuality: FilterQuality.medium,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-          // 编辑模式的边框提示。不做抖动动画——那属于"特效"。
-          if (editing)
-            IgnorePointer(
-              child: Container(
-                width: width,
-                height: height,
-                decoration: BoxDecoration(
+                )
+              else if (settings.material != 'opaque')
+                ClipRRect(
                   borderRadius: BorderRadius.circular(settings.cardRadius),
-                  border: Border.all(color: const Color(0x66FFFFFF), width: 2),
+                  child: SizedBox(
+                    width: width,
+                    height: height,
+                    child: ValueListenableBuilder<ui.Image?>(
+                      valueListenable: Wallpaper.image,
+                      builder: (context, img, _) {
+                        if (img == null) return const SizedBox.shrink();
+                        final s = 1 / Wallpaper.scale;
+                        final w = RawImage(
+                          image: img,
+                          width: img.width * s,
+                          height: img.height * s,
+                          fit: BoxFit.fill,
+                          filterQuality: FilterQuality.low,
+                        );
+                        // 云母不糊壁纸：壁纸压到半透明当色调底子，上面再盖那层色板。
+                        // 亚克力保持全透，那才是"透过玻璃看桌面"。
+                        //
+                        // 透出强度跟着色板厚度走：色板越厚，下面这层露出来的越少，
+                        // 留太多只是白白把浅色板拖灰。
+                        return Opacity(
+                          opacity: settings.material == 'mica'
+                              ? (1 - _micaAlpha).clamp(0.30, 0.55)
+                              : 1.0,
+                          child: OverflowBox(
+                            alignment: Alignment.topLeft,
+                            maxWidth: double.infinity,
+                            maxHeight: double.infinity,
+                            child: Transform.translate(
+                              offset: Offset(-card.x, -card.y),
+                              child: w,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              // 卡片本体
+              ClipRRect(
+                borderRadius: BorderRadius.circular(settings.cardRadius),
+                child: Container(
+                  width: width,
+                  height: height,
+                  decoration: BoxDecoration(
+                    // 自定义背景图时图就是底，色板全部让位
+                    // 毛玻璃模式下底色只是一层染色，模糊的壁纸在它下面
+                    color: bgFile != null ? Colors.transparent : _fill,
+                    // 整圈细边框，不加任何高光/渐变。
+                    // 这不是阴影：阴影要画在卡片外面，而窗口区域正好裁在卡片边界上，
+                    // 画了也会被切掉，所以边框画在卡片内部。
+                    border: Border.all(color: _edge, width: 1),
+                    borderRadius: BorderRadius.circular(settings.cardRadius),
+                  ),
+                  padding: contentPadding,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: DefaultTextStyle(
+                          style: TextStyle(
+                            color: _foreground,
+                            fontSize: 13,
+                            // 这里的 DefaultTextStyle 是替换式的（不带 merge），会把
+                            // 主题里传下来的 fontFamily 冲掉，必须显式带上全局字体
+                            fontFamily: 'SourceHanSansSC',
+                            decoration: TextDecoration.none,
+                          ),
+                          child: child,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-        ],
-        ),
-      ),
+              // 编辑模式的边框提示。不做抖动动画——那属于"特效"。
+              if (editing)
+                IgnorePointer(
+                  child: Container(
+                    width: width,
+                    height: height,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(settings.cardRadius),
+                      border: Border.all(
+                        color: const Color(0x66FFFFFF),
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

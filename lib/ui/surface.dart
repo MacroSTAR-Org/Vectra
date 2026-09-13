@@ -435,6 +435,7 @@ class DesktopSurfaceState extends State<DesktopSurface> {
                   child: CardView(
                     card: card,
                     settings: _settings,
+                    dataDir: widget.store.dir,
                     width: _px(card).w,
                     height: _px(card).h,
                     editing: _editingId == card.id,
