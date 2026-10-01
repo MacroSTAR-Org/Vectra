@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import '../core/grid.dart';
 import '../core/hit.dart';
 import '../core/logger.dart';
+import '../core/perf_probe.dart';  // 【临时诊断】
 import '../core/snap.dart' as snap;
 import '../model/card.dart';
 import '../model/settings.dart';
@@ -419,6 +420,8 @@ class DesktopSurfaceState extends State<DesktopSurface> {
   /// 拖拽中的卡片不能有位置动画：动画会让它落后于指针。
   /// 其它卡片、以及松手之后，都用缓动过渡。
   Duration _animDuration(WidgetCard card) {
+    return Duration.zero;  // 【临时定位C】
+    // ignore: dead_code
     if (!_settings.animations) return Duration.zero;
     // 拖拽期间**所有**卡片一律零时长，不只是被拖的那张。
     //
@@ -432,6 +435,7 @@ class DesktopSurfaceState extends State<DesktopSurface> {
 
   @override
   Widget build(BuildContext context) {
+    PerfProbe.hit('Surface');
     // 卡片几何可能刚被外层改过（加卡/删卡/改尺寸/面板里改网格），
     // 等这一帧落定之后跟 native 对一次账。
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncRegion());
@@ -464,9 +468,7 @@ class DesktopSurfaceState extends State<DesktopSurface> {
               // 掉帧就表现为拖影。
               child: RepaintBoundary(
                 child: AnimatedSize(
-                  duration: _settings.animations
-                      ? const Duration(milliseconds: 280)
-                      : Duration.zero,
+                  duration: Duration.zero,  // 【临时定位C】
                   curve: Curves.easeOutCubic,
                   alignment: Alignment.topLeft,
                   child: CardView(

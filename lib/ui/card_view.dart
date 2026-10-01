@@ -290,32 +290,18 @@ class CardView extends StatelessWidget {
                       valueListenable: Wallpaper.image,
                       builder: (context, img, _) {
                         if (img == null) return const SizedBox.shrink();
-                        final s = 1 / Wallpaper.scale;
-                        final w = RawImage(
-                          image: img,
-                          width: img.width * s,
-                          height: img.height * s,
-                          fit: BoxFit.fill,
-                          filterQuality: FilterQuality.low,
-                        );
                         // 云母不糊壁纸：壁纸压到半透明当色调底子，上面再盖那层色板。
                         // 亚克力保持全透，那才是"透过玻璃看桌面"。
                         //
                         // 透出强度跟着色板厚度走：色板越厚，下面这层露出来的越少，
                         // 留太多只是白白把浅色板拖灰。
-                        return Opacity(
-                          opacity: settings.material == 'mica'
+                        return _WallpaperSlice(
+                          image: img,
+                          opaqueAt: settings.material == 'mica'
                               ? (1 - _micaAlpha).clamp(0.30, 0.55)
                               : 1.0,
-                          child: OverflowBox(
-                            alignment: Alignment.topLeft,
-                            maxWidth: double.infinity,
-                            maxHeight: double.infinity,
-                            child: Transform.translate(
-                              offset: Offset(-card.x, -card.y),
-                              child: w,
-                            ),
-                          ),
+                          // 卡片在屏幕上的位置，用来算"该取壁纸的哪一块"
+                          cardOrigin: Offset(card.x, card.y),
                         );
                       },
                     ),
@@ -378,4 +364,93 @@ class CardView extends StatelessWidget {
       },
     );
   }
+}
+
+
+/// 毛玻璃底：只取壁纸里属于这张卡片的那一块。
+///
+/// 早先的画法是"整张壁纸 → Transform 平移 → OverflowBox 撑开 → 外层 ClipRRect 裁"，
+/// 每张卡片**每帧都要光栅化一整张全屏壁纸**（2560x1440），5 张卡就是 5 个整屏；
+/// 中间那层 Opacity 还会强制 saveLayer 出同样大的图层。磁贴是常驻桌面的东西，
+/// 这笔开销按天算。
+///
+/// 改成用 drawImageRect 的 sourceRect 直接取那一块：光栅化面积降到卡片大小
+/// （约 1/25），OverflowBox / Transform / Opacity 三层一并去掉。
+///
+/// 坐标换算：Wallpaper.image 的尺寸是屏幕逻辑尺寸的 Wallpaper.scale 倍
+/// （抓取时就按这个比例缩过，见 wallpaper.dart 的 _captureDesktop），
+/// 所以 **图像坐标 = 屏幕逻辑坐标 × Wallpaper.scale**。
+class _WallpaperSlice extends StatelessWidget {
+  const _WallpaperSlice({
+    required this.image,
+    required this.opaqueAt,
+    required this.cardOrigin,
+  });
+
+  final ui.Image image;
+
+  /// 透出强度：云母材质压到半透明当色调底子，亚克力保持全透
+  final double opaqueAt;
+
+  /// 卡片在屏幕上的逻辑位置
+  final Offset cardOrigin;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _WallpaperSlicePainter(
+        image: image,
+        opaqueAt: opaqueAt,
+        cardOrigin: cardOrigin,
+      ),
+    );
+  }
+}
+
+class _WallpaperSlicePainter extends CustomPainter {
+  _WallpaperSlicePainter({
+    required this.image,
+    required this.opaqueAt,
+    required this.cardOrigin,
+  });
+
+  final ui.Image image;
+  final double opaqueAt;
+  final Offset cardOrigin;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final k = Wallpaper.scale;
+    // 卡片可能有一部分在屏幕外（拖到边上时），源矩形先按图像边界裁一下
+    final full = Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
+    final src = Rect.fromLTWH(
+      cardOrigin.dx * k,
+      cardOrigin.dy * k,
+      size.width * k,
+      size.height * k,
+    ).intersect(full);
+    if (src.isEmpty) return;
+
+    // 源矩形被裁过时，目标矩形要按同样的比例收，否则壁纸会错位
+    final dst = Rect.fromLTWH(
+      src.left / k - cardOrigin.dx,
+      src.top / k - cardOrigin.dy,
+      src.width / k,
+      src.height / k,
+    );
+    canvas.drawImageRect(
+      image,
+      src,
+      dst,
+      Paint()
+        ..filterQuality = FilterQuality.low
+        ..color = Color.fromRGBO(0, 0, 0, opaqueAt.clamp(0.0, 1.0)),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_WallpaperSlicePainter old) =>
+      old.image != image ||
+      old.opaqueAt != opaqueAt ||
+      old.cardOrigin != cardOrigin;
 }

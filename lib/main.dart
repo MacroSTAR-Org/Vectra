@@ -13,6 +13,7 @@ import 'dart:async' show runZonedGuarded;
 import 'core/app_version.dart';
 import 'core/logger.dart';
 import 'core/paths.dart';
+import 'core/perf_probe.dart';
 import 'core/sentry.dart' as sentry;
 import 'core/sentry_reporter.dart' show wireSentryReporter;
 import 'core/splash_gate.dart';
@@ -24,6 +25,10 @@ import 'ui/app_root.dart';
 import 'ui/panel_app.dart';
 
 Future<void> main(List<String> args) async {
+  // 【临时诊断】性能探针在 _bootstrap 里挂：它要用 SchedulerBinding，
+  // 而 binding 必须在 ensureInitialized 之后才存在——放这里调会直接抛
+  // "Binding has not yet been initialized"，而这一行又在 guarded Zone 之外，
+  // 异常会把整个 main 打断（表现为程序起不来、日志也不生成）。
   // 整个启动流程都跑在同一个 guarded Zone 里：ensureInitialized 和后面的
   // runWidget 必须同 Zone，否则 Debug 模式会抛 "Zone mismatch" 断言。
   // runZonedGuarded 补的是"异步 Future 没被 await 而抛的异常"——那条缝
@@ -43,6 +48,7 @@ Future<void> _bootstrap(List<String> args) async {
 
   // 日志系统就绪后再干别的，后面每一行才能进文件
   Log.init(engine: 'main', dir: AppPaths.logsDir);
+  PerfProbe.start();  // 【临时诊断】每 3 秒 dump 帧耗时与构建次数
   // --verbose：把 debug 级日志也打出来（贴到文件里），排查用
   if (args.contains('--verbose')) {
     Log.setLevel(LogLevel.debug);
