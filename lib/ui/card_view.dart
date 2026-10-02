@@ -281,30 +281,32 @@ class CardView extends StatelessWidget {
                   ),
                 )
               else if (settings.material != 'opaque')
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(settings.cardRadius),
-                  child: SizedBox(
-                    width: width,
-                    height: height,
-                    child: ValueListenableBuilder<ui.Image?>(
-                      valueListenable: Wallpaper.image,
-                      builder: (context, img, _) {
-                        if (img == null) return const SizedBox.shrink();
+                // 不带 ClipRRect：圆角裁剪改在 _WallpaperSlice 的 painter 里做。
+                // ClipRRect(antiAlias) 会给子内容建一个 layer（saveLayer），
+                // 而 canvas.clipRRect 只是设裁剪区、不产生 layer——每张卡省一层，
+                // 5 张卡每帧就省 5 个 layer。
+                SizedBox(
+                  width: width,
+                  height: height,
+                  child: ValueListenableBuilder<ui.Image?>(
+                    valueListenable: Wallpaper.image,
+                    builder: (context, img, _) {
+                      if (img == null) return const SizedBox.shrink();
                         // 云母不糊壁纸：壁纸压到半透明当色调底子，上面再盖那层色板。
                         // 亚克力保持全透，那才是"透过玻璃看桌面"。
                         //
                         // 透出强度跟着色板厚度走：色板越厚，下面这层露出来的越少，
                         // 留太多只是白白把浅色板拖灰。
-                        return _WallpaperSlice(
-                          image: img,
-                          opaqueAt: settings.material == 'mica'
-                              ? (1 - _micaAlpha).clamp(0.30, 0.55)
-                              : 1.0,
-                          // 卡片在屏幕上的位置，用来算"该取壁纸的哪一块"
-                          cardOrigin: Offset(card.x, card.y),
-                        );
-                      },
-                    ),
+                      return _WallpaperSlice(
+                        image: img,
+                        radius: settings.cardRadius,
+                        opaqueAt: settings.material == 'mica'
+                            ? (1 - _micaAlpha).clamp(0.30, 0.55)
+                            : 1.0,
+                        // 卡片在屏幕上的位置，用来算"该取壁纸的哪一块"
+                        cardOrigin: Offset(card.x, card.y),
+                      );
+                    },
                   ),
                 ),
               // 卡片本体
@@ -383,11 +385,15 @@ class CardView extends StatelessWidget {
 class _WallpaperSlice extends StatelessWidget {
   const _WallpaperSlice({
     required this.image,
+    required this.radius,
     required this.opaqueAt,
     required this.cardOrigin,
   });
 
   final ui.Image image;
+
+  /// 卡片圆角：裁剪在 painter 里做，省掉外层 ClipRRect 的 layer
+  final double radius;
 
   /// 透出强度：云母材质压到半透明当色调底子，亚克力保持全透
   final double opaqueAt;
@@ -400,6 +406,7 @@ class _WallpaperSlice extends StatelessWidget {
     return CustomPaint(
       painter: _WallpaperSlicePainter(
         image: image,
+        radius: radius,
         opaqueAt: opaqueAt,
         cardOrigin: cardOrigin,
       ),
@@ -410,16 +417,25 @@ class _WallpaperSlice extends StatelessWidget {
 class _WallpaperSlicePainter extends CustomPainter {
   _WallpaperSlicePainter({
     required this.image,
+    required this.radius,
     required this.opaqueAt,
     required this.cardOrigin,
   });
 
   final ui.Image image;
+  final double radius;
   final double opaqueAt;
   final Offset cardOrigin;
 
   @override
   void paint(Canvas canvas, Size size) {
+    // 圆角裁剪在这里做（外层不再套 ClipRRect）
+    if (radius > 0) {
+      canvas.clipRRect(RRect.fromRectAndRadius(
+        Offset.zero & size,
+        Radius.circular(radius),
+      ));
+    }
     final k = Wallpaper.scale;
     // 卡片可能有一部分在屏幕外（拖到边上时），源矩形先按图像边界裁一下
     final full = Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
@@ -451,6 +467,7 @@ class _WallpaperSlicePainter extends CustomPainter {
   @override
   bool shouldRepaint(_WallpaperSlicePainter old) =>
       old.image != image ||
+      old.radius != radius ||
       old.opaqueAt != opaqueAt ||
       old.cardOrigin != cardOrigin;
 }
