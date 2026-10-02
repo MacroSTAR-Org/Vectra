@@ -1586,6 +1586,19 @@ class _ControlPanelState extends State<ControlPanel> {
                 _s.glassTint = 1 - v;
                 _commit();
               }, percent: true),
+              // 透明度 100% = 染色 0 = 色板 alpha 0：此时"卡片底色"整组
+              // （含莫奈取色）都不可能有可见效果。以前没有提示，用户会以为
+              // 那两组的开关坏了。
+              if (_s.material == 'acrylic' && _s.glassTint < 0.1)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                      '染色已经到 0：卡片完全透明，下面「卡片底色」那一组'
+                      '（包括莫奈取色）都不会有可见效果。想看到底色，'
+                      '把这个「透明度」往回调一些。',
+                      style: TextStyle(
+                          fontSize: 10, color: _c.accent, height: 1.5)),
+                ),
               _slider('模糊强度', _s.glassBlur, 0, 40, 1, (v) {
                 _s.glassBlur = v;
                 _commit();
@@ -1641,6 +1654,18 @@ class _ControlPanelState extends State<ControlPanel> {
           title: '卡片底色',
           icon: Icons.color_lens_outlined,
           children: [
+            // 同一件事在"用"的这一侧再说一次：用户点开关没反应时，
+            // 目光就在这里，提示放在这里才救得了
+            if (_s.material == 'acrylic' && _s.glassTint < 0.1)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text(
+                    '当前「透明度」是 100%（染色 0），卡片完全透明，'
+                    '这一组设置（含莫奈取色）都不会显示出来——'
+                    '先去上面「卡片材质」里把透明度调低一点。',
+                    style: TextStyle(
+                        fontSize: 10, color: _c.accent, height: 1.5)),
+              ),
             _switch('从壁纸取色（莫奈取色）', _s.autoColorFromWallpaper, (v) {
               _s.autoColorFromWallpaper = v;
               _commit();

@@ -99,6 +99,10 @@ class AppRootState extends State<AppRoot> with TrayListener {
     // onPanelChanged 再进这里，所以开关一切换就能同步上。
     Wallpaper.colorExtraction =
         s.autoColorFromWallpaper || s.autoForegroundFromWallpaper;
+    // 【诊断】莫奈取色开关走到这里才算真正生效，记一笔便于对照链路
+    Log.i('wallpaper', '刷新壁纸链路: 取色开关 color=${s.autoColorFromWallpaper} '
+        'fg=${s.autoForegroundFromWallpaper} → extraction='
+        '${Wallpaper.colorExtraction} 材质=${s.material}');
     if (s.material == 'opaque') {
       Wallpaper.stop();
       return;

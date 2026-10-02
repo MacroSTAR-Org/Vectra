@@ -175,7 +175,16 @@ class Wallpaper {
       final data = await thumb.toByteData();
       if (data != null) brightness.value = _avgBrightness(data);
       // 两个取色开关都关着时，算出来的颜色没有任何人读，直接省掉整段
-      if (colorExtraction) await _updateDominantColor(thumb);
+      if (colorExtraction) {
+        try {
+          await _updateDominantColor(thumb);
+          Log.i('wallpaper', '取色完成 → #${(dominantColor.value?.toARGB32() ?? 0).toRadixString(16).padLeft(8, '0')}');
+        } catch (e) {
+          Log.w('wallpaper', '取色抛异常: $e');
+        }
+      } else {
+        Log.i('wallpaper', '取色跳过（两个开关都关着）');
+      }
     } catch (e) {
       Log.w('wallpaper', '派生数据计算失败: $e');
     } finally {
