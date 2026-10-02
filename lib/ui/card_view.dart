@@ -209,9 +209,29 @@ class CardView extends StatelessWidget {
   double get _micaAlpha =>
       HSLColor.fromColor(_baseColor).lightness > 0.5 ? 0.70 : 0.45;
 
-  /// 边框与内高光的取色随底色明暗自动翻转：浅色卡片上白色高光是看不见的
-  Color get _edge =>
-      _brightBackdrop ? const Color(0x14000000) : const Color(0x1FFFFFFF);
+  /// 取色开着时，色板保留的最低染色强度。
+  ///
+  /// 不能是 0：全透时色板根本不画，取色在视觉上就完全消失了——用户会以为
+  /// 开关坏了（实测反馈）。留一层极淡的染色，让壁纸的色相始终"在"，只是淡。
+  static const double _kMinAutoTint = 0.08;
+
+  /// 透明度低到这个值以下，就认为用户要的是"几乎全透"，边框改用取色描边。
+  static const double _kSheerThreshold = 0.15;
+
+  /// 边框与内高光。
+  ///
+  /// 默认随底色明暗翻转（浅色卡片上白色高光是看不见的）。但当**取色开着且
+  /// 卡片几乎全透**时，普通边框会让卡片只剩一根灰线、和内容脱节——这时改用
+  /// 取色的色相描边，边缘带上一点壁纸的颜色，整体才和谐。
+  Color get _edge {
+    if (settings.autoColorFromWallpaper &&
+        settings.material != 'opaque' &&
+        settings.glassTint < _kSheerThreshold) {
+      // 0.30：够看清是一条彩边，又不至于像"实心描边"那样压住内容
+      return _autoColor.withValues(alpha: 0.30);
+    }
+    return _brightBackdrop ? const Color(0x14000000) : const Color(0x1FFFFFFF);
+  }
 
   /// 卡片内容的默认前景色。
   ///
@@ -244,8 +264,16 @@ class CardView extends StatelessWidget {
     if (settings.material == 'mica') {
       return _micaBase.withValues(alpha: _micaAlpha);
     }
-    // 亚克力：只铺一层薄薄的染色，让模糊壁纸透上来
-    return c.withValues(alpha: settings.glassTint.clamp(0.0, 1.0));
+    // 亚克力：只铺一层薄薄的染色，让模糊壁纸透上来。
+    //
+    // 取色开着时给一个下限（_kMinAutoTint）：用户把透明度拉满的情形下，
+    // 染色为 0 会让取色彻底看不见；留一层极淡的取色，卡片内部就始终带着
+    // 壁纸的色调，而不是纯透明的一块。
+    var tint = settings.glassTint.clamp(0.0, 1.0);
+    if (settings.autoColorFromWallpaper && tint < _kMinAutoTint) {
+      tint = _kMinAutoTint;
+    }
+    return c.withValues(alpha: tint);
   }
 
   @override
