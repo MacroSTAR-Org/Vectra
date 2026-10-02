@@ -65,8 +65,14 @@ def main() -> int:
     shutil.copytree(RELEASE / "data", data)
 
     # 4. 拉起来给用户看
+    #
+    # **必须用 explorer.exe 启动，不能用 subprocess.Popen**：
+    # Popen 起的进程留在这个命令的 Job 里，脚本一退出 Job 关闭，程序会被
+    # 连带强杀——表现就是"启动后过一会儿自己消失"，而且没有 WM_CLOSE、
+    # 没有 exit 日志、没有崩溃 dump（强制终止，程序自己都不知道）。
+    # explorer.exe 走的是另一条进程创建路径，不在本 Job 内。
     print("[3/3] 启动 ...")
-    subprocess.Popen([str(TARGET / "glance.exe")])
+    subprocess.run(["explorer.exe", str(TARGET / "glance.exe")], capture_output=True)
     time.sleep(3.0)
     print(f"已部署并启动：{TARGET / 'glance.exe'}")
     return 0
