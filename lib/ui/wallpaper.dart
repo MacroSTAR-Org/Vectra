@@ -14,10 +14,12 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
 import '../core/logger.dart';
+import '../core/paths.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Color, ColorScheme, MemoryImage, Brightness;
@@ -65,6 +67,93 @@ class Wallpaper {
   /// 算法已经保证跟 [dominantColor] 有足够对比度，不用再另外套
   /// "亮底黑字/暗底白字"那套二选一的老逻辑。同样是 null-until-computed。
   static final ValueNotifier<Color?> dominantForeground = ValueNotifier(null);
+
+  /// 取色给出的候选色（primary / secondary / tertiary / container / tint）。
+  ///
+  /// Material You 算出来的是一个**配色方案**而不是唯一正确答案，哪个更合
+  /// 眼缘因壁纸而异。与其我们替用户定，不如摆到面板上让他挑。
+  static final ValueNotifier<List<Color>> palette =
+      ValueNotifier(const <Color>[]);
+
+  // ---- 取色结果缓存 ----
+  //
+  // 取色（ColorScheme.fromImageProvider）是整条壁纸链路里最贵的一步，
+  // 而绝大多数启动里壁纸根本没换。按缩略图的**像素指纹**缓存：指纹一致就
+  // 直接用上次的颜色，跳过 PNG 编码与 Material You 量化（那两步才是
+  // "打开开关要等十几秒"的主因）。
+  static const String _cacheFileName = 'wallpaper_color.json';
+  static String? _cacheFingerprint;
+  static Map<String, Object?>? _cache;
+  static bool _cacheLoaded = false;
+
+  static File get _cacheFile => File(p.join(AppPaths.root, _cacheFileName));
+
+  /// 缩略图像素指纹：按固定步长采样若干个点。
+  /// 壁纸换了必然变，而缩放/模糊造成的细微差异不会误判成"换了"。
+  static String _fingerprintOf(ByteData data) {
+    final bytes =
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final n = bytes.length;
+    if (n < 64) return '';
+    final step = (n ~/ 256) * 4;
+    if (step <= 0) return '';
+    var h = 17;
+    for (var i = 0; i + 3 < n; i += step) {
+      h = (h * 31 + bytes[i]) & 0x7fffffff;
+      h = (h * 31 + bytes[i + 1]) & 0x7fffffff;
+      h = (h * 31 + bytes[i + 2]) & 0x7fffffff;
+    }
+    return '$n-$h';
+  }
+
+  static void _ensureCacheLoaded() {
+    if (_cacheLoaded) return;
+    _cacheLoaded = true;
+    try {
+      final f = _cacheFile;
+      if (!f.existsSync()) return;
+      final j = jsonDecode(f.readAsStringSync());
+      if (j is Map<String, dynamic>) {
+        _cacheFingerprint = j['fp'] as String?;
+        _cache = j;
+      }
+    } catch (e) {
+      Log.w('wallpaper', '取色缓存读取失败: $e');
+    }
+  }
+
+  /// 指纹命中：把缓存里的颜色（含候选色）直接贴回来。
+  static void _applyCached() {
+    final c = _cache;
+    if (c == null) return;
+    final p1 = c['primary'];
+    if (p1 is int) dominantColor.value = Color(p1);
+    final fg = c['fg'];
+    if (fg is int) dominantForeground.value = Color(fg);
+    final pal = c['palette'];
+    if (pal is List) {
+      palette.value = [
+        for (final v in pal)
+          if (v is int) Color(v),
+      ];
+    }
+  }
+
+  static void _saveCache(String fingerprint) {
+    _cacheFingerprint = fingerprint;
+    final data = <String, Object?>{
+      'fp': fingerprint,
+      'primary': dominantColor.value?.toARGB32(),
+      'fg': dominantForeground.value?.toARGB32(),
+      'palette': [for (final c in palette.value) c.toARGB32()],
+    };
+    _cache = data;
+    try {
+      _cacheFile.writeAsStringSync(jsonEncode(data));
+    } catch (e) {
+      Log.w('wallpaper', '取色缓存写入失败: $e');
+    }
+  }
 
   /// 要不要算"莫奈取色"。由 app_root 按两个开关（卡片底色取色 / 前景色
   /// 取色）的并集设置。
@@ -176,11 +265,20 @@ class Wallpaper {
       if (data != null) brightness.value = _avgBrightness(data);
       // 两个取色开关都关着时，算出来的颜色没有任何人读，直接省掉整段
       if (colorExtraction) {
-        try {
-          await _updateDominantColor(thumb);
-          Log.i('wallpaper', '取色完成 → #${(dominantColor.value?.toARGB32() ?? 0).toRadixString(16).padLeft(8, '0')}');
-        } catch (e) {
-          Log.w('wallpaper', '取色抛异常: $e');
+        _ensureCacheLoaded();
+        // 指纹复用上面那次 toByteData 回读，不额外花开销
+        final fp = data == null ? null : _fingerprintOf(data);
+        if (fp != null && fp.isNotEmpty && fp == _cacheFingerprint) {
+          _applyCached();
+          Log.i('wallpaper', '取色命中缓存（壁纸未换）→ '
+              '#${(dominantColor.value?.toARGB32() ?? 0).toRadixString(16).padLeft(8, '0')}');
+        } else {
+          try {
+            await _updateDominantColor(thumb);
+            if (fp != null && fp.isNotEmpty) _saveCache(fp);
+          } catch (e) {
+            Log.w('wallpaper', '取色抛异常: $e');
+          }
         }
       } else {
         Log.i('wallpaper', '取色跳过（两个开关都关着）');
@@ -224,12 +322,27 @@ class Wallpaper {
     try {
       final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
       if (bytes == null) return;
+      // 【通透】取色的明暗跟着壁纸走，不再写死 light。
+      //
+      // ColorScheme 的 primary 是"配在某种底色上好看"的角色色：light 方案给
+      // **深色** primary（配白底用），dark 方案给**亮色** primary。而卡片底色
+      // 通常偏深（用户手选的多是深灰），套 light 的深色 primary 就是"深上加
+      // 深"，看着闷、不透。按壁纸平均亮度选方案，深壁纸就能取到亮一点的色。
       final scheme = await ColorScheme.fromImageProvider(
         provider: MemoryImage(bytes.buffer.asUint8List()),
-        brightness: Brightness.light,
+        brightness:
+            brightness.value < 0.45 ? Brightness.dark : Brightness.light,
       );
       dominantColor.value = scheme.primary;
       dominantForeground.value = scheme.onPrimary;
+      // 候选色摆到面板上让用户挑
+      palette.value = <Color>[
+        scheme.primary,
+        scheme.secondary,
+        scheme.tertiary,
+        scheme.primaryContainer,
+        scheme.surfaceTint,
+      ];
     } catch (e) {
       Log.w('wallpaper', '取色失败: $e');
     }

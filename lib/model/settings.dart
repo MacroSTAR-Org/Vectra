@@ -24,6 +24,7 @@ class AppSettings {
     this.theme = 'auto',
     this.marketBaseUrl = '',
     this.autoColorFromWallpaper = false,
+    this.paletteIndex = 0,
     this.autoForegroundFromWallpaper = false,
     this.autoDownloadUpdate = false,
     this.updateSource = 'auto',
@@ -85,6 +86,12 @@ class AppSettings {
   /// 原来选的颜色，不丢设置。
   bool autoColorFromWallpaper;
 
+  /// 取色方案里用第几个候选色（面板上那排色块，0 = primary）。
+  ///
+  /// Material You 给的是一个**方案**（primary / secondary / tertiary /
+  /// container / tint），不是一个唯一答案。摆出来让用户挑，挑中的记在这里。
+  int paletteIndex;
+
   /// 前景色（文字/图标）也走"莫奈取色"：不再是"深底白字/浅底黑字"两档写死
   /// 的黑白二选一，改用 Material You 算法配好的 onPrimary——跟 [cardColor]
   /// 那个开关各自独立，可以只开一个。见 Wallpaper.dominantForeground。
@@ -121,6 +128,7 @@ class AppSettings {
         'theme': theme,
         if (marketBaseUrl.isNotEmpty) 'marketBaseUrl': marketBaseUrl,
         'autoColorFromWallpaper': autoColorFromWallpaper,
+        'paletteIndex': paletteIndex,
         'autoForegroundFromWallpaper': autoForegroundFromWallpaper,
         'autoDownloadUpdate': autoDownloadUpdate,
         if (updateSource != 'auto') 'updateSource': updateSource,
@@ -143,6 +151,7 @@ class AppSettings {
         theme: j['theme'] as String? ?? 'auto',
         marketBaseUrl: j['marketBaseUrl'] as String? ?? '',
         autoColorFromWallpaper: j['autoColorFromWallpaper'] as bool? ?? false,
+        paletteIndex: j['paletteIndex'] as int? ?? 0,
         autoForegroundFromWallpaper:
             j['autoForegroundFromWallpaper'] as bool? ?? false,
         autoDownloadUpdate: j['autoDownloadUpdate'] as bool? ?? false,

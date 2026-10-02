@@ -110,9 +110,19 @@ class CardView extends StatelessWidget {
   /// 实时从当前壁纸算出来的代表色，壁纸一换卡片底色跟着换，观感上更像
   /// "长在桌面上"而不是一块贴上去的死板色板。取色还没算出来（刚启动那
   /// 一瞬间）就先兜底用回用户设的固定色，不出现"卡片先黑一下"的闪烁。
-  Color get _baseColor => settings.autoColorFromWallpaper
-      ? (Wallpaper.dominantColor.value ?? Color(settings.cardColor))
-      : Color(settings.cardColor);
+  /// 取色开关打开时用的颜色。
+  ///
+  /// 优先用用户在面板上挑中的候选色（paletteIndex），取不到再退回算法给的
+  /// primary，都没有就用手选色兜底。
+  Color get _autoColor {
+    final pal = Wallpaper.palette.value;
+    final i = settings.paletteIndex;
+    if (i >= 0 && i < pal.length) return pal[i];
+    return Wallpaper.dominantColor.value ?? Color(settings.cardColor);
+  }
+
+  Color get _baseColor =>
+      settings.autoColorFromWallpaper ? _autoColor : Color(settings.cardColor);
 
   /// 底色是否偏亮。决定文字/描边用深色还是浅色，保证可读性。
   ///

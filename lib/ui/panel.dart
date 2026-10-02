@@ -1676,6 +1676,54 @@ class _ControlPanelState extends State<ControlPanel> {
               '底色跟着换。关掉立刻退回你手选的颜色，设置不会丢。',
               style: TextStyle(fontSize: 10, color: _c.ink30, height: 1.5),
             ),
+            // 取色结果：算法给的是一个方案（primary/secondary/tertiary/…），
+            // 摆出来让用户挑，而不是我们替他定一个。
+            if (_s.autoColorFromWallpaper)
+              ValueListenableBuilder<List<Color>>(
+                valueListenable: Wallpaper.palette,
+                builder: (context, colors, _) {
+                  if (colors.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 4),
+                      child: Text('取色结果还没出来（要先抓壁纸、模糊，再算色）',
+                          style:
+                              TextStyle(fontSize: 10, color: _c.ink30)),
+                    );
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 10, bottom: 4),
+                    child: Row(children: [
+                      Text('取色结果',
+                          style: TextStyle(fontSize: 10.5, color: _c.ink54)),
+                      const SizedBox(width: 10),
+                      for (var i = 0; i < colors.length; i++)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: GestureDetector(
+                            onTap: () {
+                              _s.paletteIndex = i;
+                              _commit();
+                            },
+                            child: Container(
+                              width: 26,
+                              height: 26,
+                              decoration: BoxDecoration(
+                                color: colors[i],
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: _s.paletteIndex == i
+                                      ? _c.accent
+                                      : _c.cardBorder,
+                                  width: _s.paletteIndex == i ? 2 : 1,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ]),
+                  );
+                },
+              ),
             const SizedBox(height: 4),
             _switch('文字颜色也用取色（莫奈取色）', _s.autoForegroundFromWallpaper, (v) {
               _s.autoForegroundFromWallpaper = v;
