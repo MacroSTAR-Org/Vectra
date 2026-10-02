@@ -931,6 +931,30 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // 【诊断】主窗口的"关闭/销毁/会话结束"是全进程的退出路径
+  // （main.cpp 里 SetQuitOnClose(true)，win32_window.cpp 收到销毁即
+  //  PostQuitMessage）。程序出现"自己退出、无异常、无 dump"时，
+  // 只有这里能说清是哪条消息带走了它。
+  switch (message) {
+    case WM_CLOSE:
+      Log("【退出诊断】主窗口收到 WM_CLOSE");
+      break;
+    case WM_DESTROY:
+      Log("【退出诊断】主窗口收到 WM_DESTROY（即将 PostQuitMessage 退出）");
+      break;
+    case WM_QUERYENDSESSION:
+      Log("【退出诊断】收到 WM_QUERYENDSESSION（系统准备关机/注销）");
+      break;
+    case WM_ENDSESSION:
+      Log("【退出诊断】收到 WM_ENDSESSION");
+      break;
+    case WM_DISPLAYCHANGE:
+      Log("【退出诊断】收到 WM_DISPLAYCHANGE（显示器变化）");
+      break;
+    default:
+      break;
+  }
+
   // 揭幕兜底：Dart 一直没报"全部就绪"，也得把磁贴放出来
   if (message == WM_TIMER && wparam == kRevealFallbackTimer) {
     Log("等待卡片就绪超时，直接显示磁贴");
