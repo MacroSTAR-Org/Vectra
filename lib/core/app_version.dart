@@ -10,16 +10,16 @@ library;
 
 import 'package:package_info_plus/package_info_plus.dart';
 
-/// `0.2.0+128` 形式的完整版本（和 exe 的文件版本一致）；init 之前是空串。
+/// `0.2.0+129` 形式的完整版本（和 exe 的文件版本一致）；init 之前是空串。
 /// 供**数值比较**用（更新检查的四段版本比较），不直接展示。
 String _version = '';
 
-/// 个性化版本串（大版本名 Forst + 小版本 0.2.128）。
+/// 个性化版本串（大版本名 Forst + 小版本 0.2.129）。
 ///
 /// 注意它**不再是四段数字**：所有需要比较版本的地方（更新检查）
 /// 必须用 [appVersionNumeric]，用显示串去比会被 compareVersion 判成
 /// "全垃圾 = 相同"，自动更新会永远闭嘴。
-const String kVersionDisplay = 'Forst-0.2.128';
+const String kVersionDisplay = 'Forst-0.2.129';
 
 /// 供 UI 显示 / User-Agent / Sentry release 的版本串
 String get appVersion => kVersionDisplay;

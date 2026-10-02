@@ -13,6 +13,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../../core/logger.dart';
 import '../catalog.dart';
 import '../images.dart' show WidgetImages;
 import '../morph_icons.dart' show MorphableIcon;
@@ -235,6 +236,14 @@ class LyricsWidget extends BuiltinController {
   /// 完整搜索编排。来源优先级：auto = 网易云 → LRCLIB；手动选源时只跑
   /// 所选来源优先，但来源内部的变体/兜底序列保持完整。
   Future<List<LrcLine>?> _searchLyrics(String title, String artist, int durMs) {
+    // 记下实际用的搜索参数与结果。
+    //
+    // 为什么值得单独记：排查"这首歌搜不到歌词"时，日志里原先只有
+    // "lyrics 请求成功 music.163.com/..." 这种粒度——看得出网络通，
+    // 但看不出**查的是哪首歌**、匹配结果如何，只能靠猜。
+    // （真实案例：Spotify 给「Golden Number / Iyowa」，曲库里是
+    // 「黄金数 / いよわ」，两头名字都被翻译/罗马字化了。）
+    Log.i('lyrics', '搜索:「$title」/「$artist」/${durMs}ms');
     final variants = Lrc.titleVariants(title).take(3).toList();
     if (variants.isEmpty) return Future.value(null);
     final bare = variants.length > 1 ? variants[1] : variants[0];
@@ -260,13 +269,23 @@ class LyricsWidget extends BuiltinController {
     }
 
     final src = '${_settings['source'] ?? 'auto'}';
-    if (src == 'lrclib') {
-      return lrclibBlock().then((r) => r ?? neteaseBlock());
-    }
-    if (src == 'netease') {
+    Future<List<LrcLine>?> run() {
+      if (src == 'lrclib') {
+        return lrclibBlock().then((r) => r ?? neteaseBlock());
+      }
+      if (src == 'netease') {
+        return neteaseBlock().then((r) => r ?? lrclibBlock());
+      }
       return neteaseBlock().then((r) => r ?? lrclibBlock());
     }
-    return neteaseBlock().then((r) => r ?? lrclibBlock());
+
+    // 结果也记一笔：命中多少行 / 全线落空。和上面那条配对，
+    // 一眼就能看出"歌名对不对得上、是没搜到还是被匹配算法拒了"。
+    return run().then((lines) {
+      Log.i('lyrics',
+          lines == null ? '没找到（各源都没匹配上）' : '命中 ${lines.length} 行');
+      return lines;
+    });
   }
 
   Future<void> _loadLyrics(
