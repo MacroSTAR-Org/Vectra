@@ -212,8 +212,9 @@ class CardView extends StatelessWidget {
   /// 取色开着时，色板保留的最低染色强度。
   ///
   /// 不能是 0：全透时色板根本不画，取色在视觉上就完全消失了——用户会以为
-  /// 开关坏了（实测反馈）。留一层极淡的染色，让壁纸的色相始终"在"，只是淡。
-  static const double _kMinAutoTint = 0.08;
+  /// 开关坏了（实测反馈）。但也要**非常克制**：用户的原话是"我只要一点点
+  /// 点点"——察觉到有色调即可，不能像上了色。（初版给了 0.08 被嫌重。）
+  static const double _kMinAutoTint = 0.04;
 
   /// 透明度低到这个值以下，就认为用户要的是"几乎全透"，边框改用取色描边。
   static const double _kSheerThreshold = 0.15;
@@ -227,8 +228,9 @@ class CardView extends StatelessWidget {
     if (settings.autoColorFromWallpaper &&
         settings.material != 'opaque' &&
         settings.glassTint < _kSheerThreshold) {
-      // 0.30：够看清是一条彩边，又不至于像"实心描边"那样压住内容
-      return _autoColor.withValues(alpha: 0.30);
+      // 0.12：只是隐约一条彩边。初版给 0.30 被嫌太重——用户要的淡是
+      // "注意到才发现"，不是"一眼看到一圈颜色"。
+      return _autoColor.withValues(alpha: 0.12);
     }
     return _brightBackdrop ? const Color(0x14000000) : const Color(0x1FFFFFFF);
   }
