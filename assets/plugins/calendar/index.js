@@ -32,14 +32,25 @@ lw.register({
       var startDow = first.getDay();
       var lead = mondayFirst ? (startDow + 6) % 7 : startDow;
 
-      // 固定 6 行 42 格：月份切换时高度不跳变
+      // 固定 6 行 42 格：月份切换时高度不跳变。
+      // 日期格不能写死 36px：3x3/4x3 小卡片的网格行高可能只有 20~30px，
+      // 固定高度会触发 Flutter 的 RenderFlex overflow。按当前卡片的可用宽高
+      // 计算格子尺寸，并让文字随格子一起收缩。
+      var rows = ctx.grid.rows;
+      var extraHeight = rows >= 5 ? 88 : (rows >= 4 ? 26 : 0);
+      var gridHeight = Math.max(96, ctx.size.h - 56 - extraHeight);
+      var gridWidth = Math.max(84, ctx.size.w - 12);
+      var cellSize = Math.min(36, Math.min(gridWidth / 7 - 2, (gridHeight - 10) / 6));
+      cellSize = Math.max(18, cellSize);
+      var compact = cellSize < 26;
+
       var cells = [];
       for (var i = 0; i < 42; i++) {
         var d = new Date(viewYear, viewMonth, 1 - lead + i);
         var inMonth = d.getMonth() === viewMonth;
         var col = i % 7;
         cells.push(cell(d, inMonth, weekendCols.indexOf(col) >= 0,
-                        showLunar, showFest));
+                        showLunar, showFest, cellSize, compact));
       }
 
       var headCells = heads.map(function (h, i) {
@@ -89,9 +100,8 @@ lw.register({
 
       // 尺寸分档：格子越多，能承载的信息越多。
       // 小档只放月历；中档加今日一行；大档在下方展开今日详情与近期节气/节日。
-      var rows = ctx.grid.rows;
-      if (rows >= 4) body.children.splice(1, 0, todayStrip());
-      if (rows >= 5) body.children.push({ t: 'divider' }, upcoming());
+      if (rows >= 4 && !compact) body.children.splice(1, 0, todayStrip());
+      if (rows >= 5 && !compact) body.children.push({ t: 'divider' }, upcoming());
 
       ctx.render(body);
     }
@@ -152,7 +162,7 @@ lw.register({
     }
 
     // 一格：上面公历日，下面农历/节气/节日
-    function cell(d, inMonth, weekend, showLunar, showFest) {
+    function cell(d, inMonth, weekend, showLunar, showFest, cellSize, compact) {
       var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
       var isToday = sameYMD(today, y, m - 1, day);
 
@@ -185,12 +195,16 @@ lw.register({
         dayOpacity = 0.9;
       }
 
+      // 紧凑格子只保留公历数字，避免副标题把行高再次撑开。
+      if (compact) sub = '';
+      var daySize = compact ? Math.max(10, cellSize * 0.48) : Math.min(15, cellSize * 0.42);
+      var subSize = Math.max(7, Math.min(9.5, cellSize * 0.27));
       var inner = {
-        t: 'col', gap: 1, cross: 'center', main: 'center', children: [
-          { t: 'text', v: '' + day, size: 15, weight: isToday ? 700 : 500,
+        t: 'col', gap: compact ? 0 : 1, cross: 'center', main: 'center', children: [
+          { t: 'text', v: '' + day, size: daySize, weight: isToday ? 700 : 500,
             align: 'center', color: dayColor, opacity: dayOpacity },
           sub
-            ? { t: 'text', v: sub, size: 9.5, align: 'center', maxLines: 1,
+            ? { t: 'text', v: sub, size: subSize, align: 'center', maxLines: 1,
                 color: isToday ? '#0B1116' : subColor,
                 opacity: isToday ? 0.85 : (inMonth ? 0.5 : 0.22) }
             : { t: 'box' }
@@ -198,7 +212,7 @@ lw.register({
       };
 
       return { t: 'row', main: 'center', children: [
-        { t: 'box', w: 36, h: 36, radius: 18, center: true,
+        { t: 'box', w: cellSize, h: cellSize, radius: cellSize / 2, center: true,
           bg: isToday ? ACCENT : (marked ? '#FFFFFF12' : null),
           child: inner }
       ] };

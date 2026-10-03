@@ -83,6 +83,35 @@ class PluginManifest {
       throw FormatException('defaultSize "$def" 不在 sizes 列表里');
     }
 
+    final parsedSettings = <Map<String, Object?>>[];
+    final keys = <String>{};
+    for (final item in (raw['settings'] as List? ?? const [])) {
+      if (item is! Map || item['key'] is! String) continue;
+      final setting = item.cast<String, Object?>();
+      final key = (setting['key'] as String).trim();
+      if (key.isEmpty || !keys.add(key)) {
+        throw FormatException('settings 中存在重复或空 key: $key');
+      }
+      final type = setting['type'];
+      if (type != null &&
+          (type is! String ||
+              !const ['boolean', 'number', 'text', 'select'].contains(type))) {
+        throw FormatException('设置项 $key 的 type 不合法');
+      }
+      if (type == 'number') {
+        final min = setting['min'];
+        final max = setting['max'];
+        final step = setting['step'];
+        if (min is! num || max is! num || min > max || (step != null && (step is! num || step <= 0))) {
+          throw FormatException('设置项 $key 的 number 范围或 step 不合法');
+        }
+      }
+      if (type == 'select' && setting['options'] is! List) {
+        throw FormatException('设置项 $key 缺少 select options');
+      }
+      parsedSettings.add(setting);
+    }
+
     return PluginManifest(
       id: id,
       name: req('name'),
@@ -94,10 +123,7 @@ class PluginManifest {
       sizes: sizes,
       defaultSize: def,
       singleton: raw['singleton'] == true,
-      settings: [
-        for (final s in (raw['settings'] as List? ?? const []))
-          if (s is Map && s['key'] is String) s.cast<String, Object?>()
-      ],
+      settings: parsedSettings,
       scripts: [
         for (final s in (raw['scripts'] as List? ?? const []))
           if (s is String) s

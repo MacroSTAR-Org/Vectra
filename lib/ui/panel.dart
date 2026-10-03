@@ -26,6 +26,8 @@ import '../core/paths.dart';
 import '../core/theme.dart';
 import 'card_view.dart';
 import '../core/updater.dart';
+import '../config/config_binding.dart';
+import '../config/config_coordinator.dart';
 import '../model/ai_settings.dart';
 import '../model/card.dart';
 import '../model/settings.dart';
@@ -207,10 +209,158 @@ class _ControlPanelState extends State<ControlPanel> {
   _PanelColors get _c =>
       _PanelColors(effectiveBrightness(_s) == Brightness.light);
 
+  late final ConfigCoordinator _config;
+  final Map<String, ConfigBinding<Object?>> _cardBindings = {};
+  final Map<String, ConfigBinding<Object?>> _coreBindings = {};
+
+  ConfigBinding<T> _register<T>(ConfigSpec<T> spec) => _config.register(spec);
+
+  void _registerCoreBindings() {
+    void add(String key, ConfigScope scope, Object? Function() read,
+        void Function(Object?) write) {
+      _coreBindings[key] = _register<Object?>(ConfigSpec<Object?>(
+        key: key,
+        scope: scope,
+        type: ConfigValueType.json,
+        read: read,
+        write: write,
+      ));
+    }
+
+    final s = widget.state.settings;
+    add('settings.gridCell', ConfigScope.app, () => s.gridCell,
+        (v) => s.gridCell = (v as num).round());
+    add('settings.gridGap', ConfigScope.app, () => s.gridGap,
+        (v) => s.gridGap = (v as num).round());
+    add('settings.snapThreshold', ConfigScope.app, () => s.snapThreshold,
+        (v) => s.snapThreshold = (v as num).toDouble());
+    add('settings.snapEnabled', ConfigScope.app, () => s.snapEnabled,
+        (v) => s.snapEnabled = v as bool);
+    add('settings.locked', ConfigScope.app, () => s.locked,
+        (v) => s.locked = v as bool);
+    add('settings.animations', ConfigScope.app, () => s.animations,
+        (v) => s.animations = v as bool);
+    add('settings.cardRadius', ConfigScope.app, () => s.cardRadius,
+        (v) => s.cardRadius = (v as num).toDouble());
+    add('settings.glassTint', ConfigScope.app, () => s.glassTint,
+        (v) => s.glassTint = (v as num).toDouble());
+    add('settings.glassBlur', ConfigScope.app, () => s.glassBlur,
+        (v) => s.glassBlur = (v as num).toDouble());
+    add('settings.autoColorFromWallpaper', ConfigScope.app,
+        () => s.autoColorFromWallpaper,
+        (v) => s.autoColorFromWallpaper = v as bool);
+    add('settings.autoForegroundFromWallpaper', ConfigScope.app,
+        () => s.autoForegroundFromWallpaper,
+        (v) => s.autoForegroundFromWallpaper = v as bool);
+    add('settings.cardColor', ConfigScope.app, () => s.cardColor,
+        (v) => s.cardColor = (v as num).toInt());
+    add('settings.theme', ConfigScope.app, () => s.theme,
+        (v) => s.theme = v as String);
+    add('settings.material', ConfigScope.app, () => s.material,
+        (v) => s.material = v as String);
+    add('settings.liveRefreshMs', ConfigScope.app, () => s.liveRefreshMs,
+        (v) => s.liveRefreshMs = (v as num).round());
+    add('settings.autoDownloadUpdate', ConfigScope.app,
+        () => s.autoDownloadUpdate,
+        (v) => s.autoDownloadUpdate = v as bool);
+    add('settings.updateSource', ConfigScope.app, () => s.updateSource,
+        (v) => s.updateSource = v as String);
+
+    final ai = widget.state.ai;
+    add('ai.baseUrl', ConfigScope.ai, () => ai.baseUrl,
+        (v) => ai.baseUrl = v as String);
+    add('ai.apiKey', ConfigScope.ai, () => ai.apiKey,
+        (v) => ai.apiKey = v as String);
+    add('ai.model', ConfigScope.ai, () => ai.model,
+        (v) => ai.model = v as String);
+    add('ai.temperature', ConfigScope.ai, () => ai.temperature,
+        (v) => ai.temperature = (v as num).toDouble());
+    add('ai.maxHistory', ConfigScope.ai, () => ai.maxHistory,
+        (v) => ai.maxHistory = (v as num).round());
+    add('ai.systemPrompt', ConfigScope.ai, () => ai.systemPrompt,
+        (v) => ai.systemPrompt = v as String);
+    add('ai.sidebarWidth', ConfigScope.ai, () => ai.sidebarWidth,
+        (v) => ai.sidebarWidth = (v as num).toDouble());
+    add('ai.radius', ConfigScope.ai, () => ai.radius,
+        (v) => ai.radius = (v as num).toDouble());
+    add('ai.glass', ConfigScope.ai, () => ai.glass,
+        (v) => ai.glass = v as bool);
+    add('ai.tint', ConfigScope.ai, () => ai.tint,
+        (v) => ai.tint = (v as num).toDouble());
+    add('ai.agent', ConfigScope.ai, () => ai.agent,
+        (v) => ai.agent = v as bool);
+    add('ai.dock', ConfigScope.ai, () => ai.dock,
+        (v) => ai.dock = v as bool);
+    add('ai.hotkeyVk', ConfigScope.ai, () => ai.hotkeyVk,
+        (v) => ai.hotkeyVk = (v as num).round());
+  }
+
+  void _setConfig(String key, Object? value, {bool hotkey = false}) {
+    final binding = _coreBindings[key];
+    if (binding == null) {
+      throw StateError('Unregistered configuration: $key');
+    }
+    _config.set(binding, value, hotkey: hotkey);
+    _maybeBumpThemeRevision();
+    setState(() {});
+  }
+
+  ConfigBinding<T> _cardBinding<T>(WidgetCard card, Map<String, Object?> field) {
+    final key = field['key'] as String;
+    final id = '${card.id}:$key';
+    final existing = _cardBindings[id];
+    if (existing != null) return existing as ConfigBinding<T>;
+    final typeName = field['type'];
+    final type = switch (typeName) {
+      'boolean' => ConfigValueType.boolean,
+      'number' => ConfigValueType.number,
+      'select' => ConfigValueType.select,
+      _ => ConfigValueType.text,
+    };
+    final binding = _register<T>(ConfigSpec<T>(
+      key: 'card:${card.id}.$key',
+      scope: ConfigScope.card,
+      type: type,
+      read: () {
+        final value = card.settings.containsKey(key)
+            ? card.settings[key]
+            : field['default'];
+        if (value != null) return value as T;
+        return switch (type) {
+          ConfigValueType.boolean => false as T,
+          ConfigValueType.number => ((field['min'] as num?) ?? 0) as T,
+          _ => '' as T,
+        };
+      },
+      write: (value) => card.settings[key] = value,
+      defaultValue: field['default'] as T?,
+      min: (field['min'] as num?)?.toDouble(),
+      max: (field['max'] as num?)?.toDouble(),
+      step: (field['step'] as num?)?.toDouble(),
+      options: [
+        for (final option in (field['options'] as List? ?? const []))
+          if (option is Map && option['value'] != null)
+            ConfigOption<T>(
+              value: option['value'] as T,
+              label: '${option['label'] ?? option['value']}',
+            ),
+      ],
+    ));
+    _cardBindings[id] = binding as ConfigBinding<Object?>;
+    return binding;
+  }
+
   @override
   void initState() {
+    _config = ConfigCoordinator(
+      store: widget.store,
+      state: widget.state,
+      onChanged: widget.onChanged,
+      onHotkeyChanged: widget.onHotkeyChanged,
+    );
     super.initState();
     _lastBrightness = effectiveBrightness(_s);
+    _registerCoreBindings();
     // 先拍一张基线，否则第一次改动会把所有设置项都算成"变了"
     _settingsSnapshot = widget.state.settings.toJson();
     Log.i('panel', '打开设置窗口（页 $_tab）');
@@ -253,18 +403,11 @@ class _ControlPanelState extends State<ControlPanel> {
 
   void _commit() {
     _logSettingsDiff();
-    widget.store.save(widget.state);
+    _config.commit();
     setState(() {});
     // 立刻检查生效亮度：手动切换主题时希望面板外壳（背景 / fluent 控件的
     // 主题色）跟着变，不必等 260ms 去抖。
     _maybeBumpThemeRevision();
-    _commitTimer?.cancel();
-    _commitTimer = Timer(const Duration(milliseconds: 260), () {
-      _commitTimer = null;
-      // 去抖后再兜一次：系统深浅色切换不会走 setState，可能正好在这期间翻转
-      _maybeBumpThemeRevision();
-      if (mounted) widget.onChanged();
-    });
   }
 
   void _maybeBumpThemeRevision() {
@@ -275,15 +418,9 @@ class _ControlPanelState extends State<ControlPanel> {
     }
   }
 
-  Timer? _commitTimer;
-
   @override
   void dispose() {
-    // 面板关掉时还欠着一次通知，补上——否则最后那次改动要等下次才生效
-    if (_commitTimer?.isActive ?? false) {
-      _commitTimer!.cancel();
-      widget.onChanged();
-    }
+    _config.dispose();
     _searchCtrl.dispose();
     _searchFocus.dispose();
     super.dispose();
@@ -1214,8 +1351,8 @@ class _ControlPanelState extends State<ControlPanel> {
         control = ToggleSwitch(
           checked: current == true,
           onChanged: (v) {
-            card.settings[key] = v;
-            _commit();
+            _config.set(_cardBinding<bool>(card, f), v);
+            setState(() {});
           },
         );
       case 'select':
@@ -1235,8 +1372,8 @@ class _ControlPanelState extends State<ControlPanel> {
           ],
           onChanged: (v) {
             if (v == null) return;
-            card.settings[key] = v;
-            _commit();
+            _config.set(_cardBinding<String>(card, f), v);
+            setState(() {});
           },
         );
       case 'number':
@@ -1254,8 +1391,11 @@ class _ControlPanelState extends State<ControlPanel> {
                 max: max,
                 divisions: ((max - min) / step).round().clamp(1, 1000),
                 onChanged: (nv) {
-                  card.settings[key] = snapNumber(nv, min, step);
-                  _commit();
+                  _config.set(
+                    _cardBinding<num>(card, f),
+                    snapNumber(nv, min, step),
+                  );
+                  setState(() {});
                 },
               ),
             ),
@@ -1272,8 +1412,8 @@ class _ControlPanelState extends State<ControlPanel> {
             initial: '${current ?? ''}',
             placeholder: f['placeholder'] as String?,
             onSubmitted: (v) {
-              card.settings[key] = v;
-              _commit();
+              _config.set(_cardBinding<String>(card, f), v);
+              setState(() {});
             },
           ),
         );
@@ -1312,28 +1452,22 @@ class _ControlPanelState extends State<ControlPanel> {
           icon: FluentIcons.grid_view_medium,
           children: [
             _slider('网格单元大小', _s.gridCell.toDouble(), 72, 180, 4, (v) {
-              _s.gridCell = v.round();
-              _commit();
+              _setConfig('settings.gridCell', v.round());
             }, suffix: 'px'),
             _slider('网格间距', _s.gridGap.toDouble(), 0, 32, 2, (v) {
-              _s.gridGap = v.round();
-              _commit();
+              _setConfig('settings.gridGap', v.round());
             }, suffix: 'px'),
             _slider('吸附阈值', _s.snapThreshold, 2, 40, 1, (v) {
-              _s.snapThreshold = v;
-              _commit();
+              _setConfig('settings.snapThreshold', v);
             }, suffix: 'px'),
             _switch('磁吸对齐', _s.snapEnabled, (v) {
-              _s.snapEnabled = v;
-              _commit();
+              _setConfig('settings.snapEnabled', v);
             }),
             _switch('锁定布局（禁止拖动与改尺寸）', _s.locked, (v) {
-              _s.locked = v;
-              _commit();
+              _setConfig('settings.locked', v);
             }),
             _switch('动画效果（拖拽缓动与插件内容切换）', _s.animations, (v) {
-              _s.animations = v;
-              _commit();
+              _setConfig('settings.animations', v);
             }),
           ],
         ),
@@ -1343,17 +1477,14 @@ class _ControlPanelState extends State<ControlPanel> {
           children: [
             _materialPicker(),
             _slider('圆角', _s.cardRadius, 0, 40, 1, (v) {
-              _s.cardRadius = v;
-              _commit();
+              _setConfig('settings.cardRadius', v);
             }, suffix: 'px'),
             if (_s.material != 'opaque') ...[
               _slider('透明度（染色越少越透）', 1 - _s.glassTint, 0, 1, 0.05, (v) {
-                _s.glassTint = 1 - v;
-                _commit();
+                _setConfig('settings.glassTint', 1 - v);
               }, percent: true),
               _slider('模糊强度', _s.glassBlur, 0, 40, 1, (v) {
-                _s.glassBlur = v;
-                _commit();
+                _setConfig('settings.glassBlur', v);
               }, suffix: 'px'),
               // 云母是静态材质，刷新率对它没有意义，别摆出来误导人
               if (_s.material != 'mica')
@@ -1407,8 +1538,7 @@ class _ControlPanelState extends State<ControlPanel> {
           icon: FluentIcons.color,
           children: [
             _switch('从壁纸取色（莫奈取色）', _s.autoColorFromWallpaper, (v) {
-              _s.autoColorFromWallpaper = v;
-              _commit();
+              _setConfig('settings.autoColorFromWallpaper', v);
             }),
             Text(
               '开着的时候下面选的颜色不生效，改成实时从当前壁纸算一个代表色——'
@@ -1418,8 +1548,7 @@ class _ControlPanelState extends State<ControlPanel> {
             ),
             const SizedBox(height: 4),
             _switch('文字颜色也用取色（莫奈取色）', _s.autoForegroundFromWallpaper, (v) {
-              _s.autoForegroundFromWallpaper = v;
-              _commit();
+              _setConfig('settings.autoForegroundFromWallpaper', v);
             }),
             Text(
               '默认文字颜色只有"深底白字/浅底黑字"两档；开着这个之后文字颜色'
@@ -1444,8 +1573,7 @@ class _ControlPanelState extends State<ControlPanel> {
                     ])
                       GestureDetector(
                         onTap: () {
-                          _s.cardColor = c;
-                          _commit();
+                          _setConfig('settings.cardColor', c);
                         },
                         child: Container(
                           width: 34,
@@ -1519,8 +1647,7 @@ class _ControlPanelState extends State<ControlPanel> {
             padding: const EdgeInsets.only(right: 8),
             child: GestureDetector(
               onTap: () {
-                _s.theme = m.$1;
-                _commit();
+                _setConfig('settings.theme', m.$1);
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 160),
@@ -1566,8 +1693,7 @@ class _ControlPanelState extends State<ControlPanel> {
                 padding: const EdgeInsets.only(right: 8),
                 child: GestureDetector(
                   onTap: () {
-                    _s.material = m.$1;
-                    _commit();
+                    _setConfig('settings.material', m.$1);
                   },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 160),
@@ -1626,8 +1752,7 @@ class _ControlPanelState extends State<ControlPanel> {
               for (final o in options)
                 GestureDetector(
                   onTap: () {
-                    _s.liveRefreshMs = o.$1;
-                    _commit();
+                    _setConfig('settings.liveRefreshMs', o.$1);
                   },
                   child: Container(
                     padding:
@@ -1669,27 +1794,22 @@ class _ControlPanelState extends State<ControlPanel> {
                 desc: '按 OpenAI 兼容格式请求 {BaseURL}/chat/completions。'
                     'DeepSeek、Kimi、本地 Ollama、One API 都可以填。',
                 onSubmit: (v) {
-              ai.baseUrl = v.trim();
-              _commit();
+              _setConfig('ai.baseUrl', v.trim());
             }),
             _aiField('API Key', ai.apiKey,
                 obscure: true,
                 desc: '明文存在 state.json 里，请勿把该文件分享出去。',
                 onSubmit: (v) {
-              ai.apiKey = v.trim();
-              _commit();
+              _setConfig('ai.apiKey', v.trim());
             }),
             _aiField('模型', ai.model, placeholder: 'gpt-4o-mini', onSubmit: (v) {
-              ai.model = v.trim();
-              _commit();
+              _setConfig('ai.model', v.trim());
             }),
             _slider('温度（越高越发散）', ai.temperature, 0, 2, 0.1, (v) {
-              ai.temperature = v;
-              _commit();
+              _setConfig('ai.temperature', v);
             }, decimals: 1),
             _slider('携带历史条数', ai.maxHistory.toDouble(), 2, 60, 2, (v) {
-              ai.maxHistory = v.round();
-              _commit();
+              _setConfig('ai.maxHistory', v.round());
             }),
           ],
         ),
@@ -1705,8 +1825,7 @@ class _ControlPanelState extends State<ControlPanel> {
               maxLines: 5,
               minLines: 3,
               onChanged: (v) {
-                ai.systemPrompt = v;
-                _commit();
+                _setConfig('ai.systemPrompt', v);
               },
             ),
             const SizedBox(height: 4),
@@ -1719,21 +1838,17 @@ class _ControlPanelState extends State<ControlPanel> {
           icon: FluentIcons.color,
           children: [
             _slider('侧边栏宽度', ai.sidebarWidth, 280, 640, 10, (v) {
-              ai.sidebarWidth = v;
-              _commit();
+              _setConfig('ai.sidebarWidth', v);
             }, suffix: 'px'),
             _slider('侧边栏圆角', ai.radius, 0, 48, 2, (v) {
-              ai.radius = v;
-              _commit();
+              _setConfig('ai.radius', v);
             }, suffix: 'px'),
             _switch('侧边栏用毛玻璃（与磁贴同一材质）', ai.glass, (v) {
-              ai.glass = v;
-              _commit();
+              _setConfig('ai.glass', v);
             }),
             if (ai.glass)
               _slider('侧边栏不透明度', ai.tint, 0, 1, 0.05, (v) {
-                ai.tint = v;
-                _commit();
+                _setConfig('ai.tint', v);
               }, percent: true),
             const SizedBox(height: 4),
             Text('侧边栏的材质与磁贴共用同一张预模糊图，但透明度和圆角单独调。'
@@ -1746,16 +1861,14 @@ class _ControlPanelState extends State<ControlPanel> {
           icon: FluentIcons.settings,
           children: [
             _switch('Agent 能力（让 AI 操作电脑与读文件）', ai.agent, (v) {
-              ai.agent = v;
-              _commit();
+              _setConfig('ai.agent', v);
             }),
             Text('开启后 AI 可以读文件、查系统信息、调音量、开设置页等。'
                 '执行脚本、删文件、关机重启这类会先弹卡片让你确认。',
                 style: TextStyle(fontSize: 10, color: _c.ink24)),
             const SizedBox(height: 8),
             _switch('右下角投放点（收起后缩成小方块）', ai.dock, (v) {
-              ai.dock = v;
-              _commit();
+              _setConfig('ai.dock', v);
             }),
             Text('把文件拖到屏幕右下角那个小方块上，侧边栏就会展开并把文件挂成附件。'
                 '它是常驻置顶的——磁贴常驻在最底层，右下角一被别的窗口盖住就够不到，'
@@ -1877,8 +1990,7 @@ class _ControlPanelState extends State<ControlPanel> {
           ],
           onChanged: (v) {
             if (v == null) return;
-            ai.hotkeyVk = v;
-            _commit();
+            _setConfig('ai.hotkeyVk', v, hotkey: true);
             widget.onHotkeyChanged?.call();
           },
         ),
@@ -1976,7 +2088,7 @@ class _ControlPanelState extends State<ControlPanel> {
               child: Text('应用'),
               onPressed: () {
                 final finalColor = _pickedColor ?? draft;
-                _s.cardColor = finalColor.toARGB32();
+                _setConfig('settings.cardColor', finalColor.toARGB32());
                 Navigator.pop(context, true);
               },
             ),
@@ -2125,8 +2237,7 @@ class _ControlPanelState extends State<ControlPanel> {
           const SizedBox(height: 12),
           _switch('检测到新版本时自动下载（下完等你确认重启）',
               _s.autoDownloadUpdate, (v) {
-            _s.autoDownloadUpdate = v;
-            _commit();
+            _setConfig('settings.autoDownloadUpdate', v);
           }),
           const SizedBox(height: 4),
           Row(children: [
@@ -2144,8 +2255,7 @@ class _ControlPanelState extends State<ControlPanel> {
                 ])
                   GestureDetector(
                     onTap: () {
-                      _s.updateSource = v;
-                      _commit();
+                      _setConfig('settings.updateSource', v);
                     },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 160),
