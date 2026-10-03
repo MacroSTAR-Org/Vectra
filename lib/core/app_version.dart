@@ -19,7 +19,7 @@ String _version = '';
 /// 注意它**不再是四段数字**：所有需要比较版本的地方（更新检查）
 /// 必须用 [appVersionNumeric]，用显示串去比会被 compareVersion 判成
 /// "全垃圾 = 相同"，自动更新会永远闭嘴。
-const String kVersionDisplay = 'Forst-0.2.129';
+const String kVersionDisplay = 'Forst-0.2.130';
 
 /// 供 UI 显示 / User-Agent / Sentry release 的版本串
 String get appVersion => kVersionDisplay;
