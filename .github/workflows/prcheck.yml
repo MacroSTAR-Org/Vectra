@@ -39,9 +39,9 @@ jobs:
       - name: Check build output
         shell: pwsh
         run: |
-          $exePath = "build/windows/x64/runner/Release/vectra.exe"
+          $exePath = "build/windows/x64/runner/Release/glance.exe"
           if (-not (Test-Path $exePath)) {
-            Write-Error "vectra.exe not found: $exePath"
+            Write-Error "glance.exe not found: $exePath"
             exit 1
           }
 
