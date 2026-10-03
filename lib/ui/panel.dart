@@ -72,10 +72,11 @@ class _PanelColors {
   Color get ink24 =>
       light ? Color(0x3D16181C) : Color(0x3DFFFFFF);
 
-  /// 卡片底/边框：深色是白 5%/12%，浅色换成黑 5%/12%
-  Color get card => light ? Color(0x0D000000) : Color(0x0DFFFFFF);
+  /// 卡片底/边框：Win11 设置风格的**实色**卡片
+  /// （浅色纯白 / 深色比底色亮一档），不再是半透明浮层。
+  Color get card => light ? Color(0xFFFFFFFF) : Color(0xFF23292B);
   Color get cardBorder =>
-      light ? Color(0x1F000000) : Color(0x1FFFFFFF);
+      light ? Color(0x14000000) : Color(0x1FFFFFFF);
 
   /// 未选中 chip / 分隔线的底（白 8% ↔ 黑 8%）
   Color get chipBg =>
@@ -2177,46 +2178,57 @@ class _ControlPanelState extends State<ControlPanel> {
 
   Widget _switch(String label, bool value, ValueChanged<bool> onChanged) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: ToggleSwitch(
-        checked: value,
-        onChanged: onChanged,
-        content: Text(label,
-            style: TextStyle(fontSize: 12, color: _c.ink70)),
-      ),
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(children: [
+        Expanded(
+          child: Text(label,
+              style: TextStyle(fontSize: 12.5, color: _c.ink70)),
+        ),
+        const SizedBox(width: 12),
+        ToggleSwitch(checked: value, onChanged: onChanged),
+      ]),
     );
   }
 
   /// 分组卡片：圆角 + 半透明底 + 小节标题
+  /// Win11 设置的分组样式：**小标题在卡片外面**（组名 + 可选图标），
+  /// 下面一张实色圆角卡片装着这一组的所有行。
   Widget _group({
     required String title,
     IconData? icon,
     required List<Widget> children,
   }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
-      decoration: BoxDecoration(
-        color: _c.card,
-        borderRadius: BorderRadius.circular(_kRadius),
-        border: Border.all(color: _c.cardBorder),
-      ),
+      margin: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            if (icon != null) ...[
-              Icon(icon, size: 14, color: _c.accentIcon),
-              const SizedBox(width: 6),
-            ],
-            Text(title,
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: _c.accentSoft)),
-          ]),
-          const SizedBox(height: 12),
-          ...children,
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 6),
+            child: Row(children: [
+              if (icon != null) ...[
+                Icon(icon, size: 13, color: _c.ink54),
+                const SizedBox(width: 6),
+              ],
+              Text(title,
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _c.ink)),
+            ]),
+          ),
+          Container(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+            decoration: BoxDecoration(
+              color: _c.card,
+              borderRadius: BorderRadius.circular(_kRadius),
+              border: Border.all(color: _c.cardBorder),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: children,
+            ),
+          ),
         ],
       ),
     );
