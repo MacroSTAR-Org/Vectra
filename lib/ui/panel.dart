@@ -1593,9 +1593,9 @@ class _ControlPanelState extends State<ControlPanel> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                      '染色到 0 时卡片几乎全透：此时「卡片底色」只会保留'
-                      '一层极淡的取色（加一道彩色描边），手选的深色是看不'
-                      '出来的。想看清底色，把这个「透明度」往回调一些。',
+                      '染色到 0 时卡片完全透明：下面「卡片底色」那一组'
+                      '（含莫奈取色）都不会有可见效果。想看到底色，'
+                      '把这个「透明度」往回调一些。',
                       style: TextStyle(
                           fontSize: 10, color: _c.accent, height: 1.5)),
                 ),
@@ -1660,9 +1660,9 @@ class _ControlPanelState extends State<ControlPanel> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Text(
-                    '当前「透明度」是 100%（染色 0）：底色只保留一层极淡的'
-                    '取色与一道彩色描边，手选的颜色看不出效果——'
-                    '想看清，去上面「卡片材质」把透明度调低一点。',
+                    '当前「透明度」是 100%（染色 0），卡片完全透明，'
+                    '这一组设置（含莫奈取色）都不会显示出来——'
+                    '先去上面「卡片材质」里把透明度调低一点。',
                     style: TextStyle(
                         fontSize: 10, color: _c.accent, height: 1.5)),
               ),
