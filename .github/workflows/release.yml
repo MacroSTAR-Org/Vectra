@@ -68,7 +68,21 @@ jobs:
             throw "Tag '$tag' already exists"
           }
 
-      - name: Generate changelog
+      # 两种触发方式要取不同的区间，否则 changelog 是空的：
+      #   tag 推送时 tag 已经存在，那些提交对 git-cliff 来说"已发布"了，
+      #   --unreleased 什么都找不到（实测 0.2.0.130 的说明里写着"0 次提交"）。
+      #   所以 tag 触发改用 --latest（生成最新 tag 对应的区间）。
+      - name: Generate changelog (tag push)
+        if: github.event_name == 'push'
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: tool/cliff.toml
+          args: --latest --output CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate changelog (manual)
+        if: github.event_name == 'workflow_dispatch'
         uses: orhun/git-cliff-action@v4
         with:
           config: tool/cliff.toml
