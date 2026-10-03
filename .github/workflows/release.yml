@@ -1,6 +1,11 @@
 name: Release
 
 on:
+  # 打 tag 即发布：git tag 0.2.0.131 && git push --tags
+  # 版本号沿用 pubspec 的 A.B.C+D → tag 写成 A.B.C.D
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       draft:
@@ -33,6 +38,16 @@ jobs:
         id: get_tag
         shell: pwsh
         run: |
+          # tag 触发：tag 名就是版本号，且 tag 已经存在，不再做"不存在"校验
+          # 手动触发：从 pubspec 读版本，并要求对应 tag 还没打过
+          $isTagPush = "${{ github.event_name }}" -eq "push"
+          if ($isTagPush) {
+            $version = "${{ github.ref_name }}"
+            echo "tag_name=$version" >> $env:GITHUB_OUTPUT
+            echo "version=$version" >> $env:GITHUB_OUTPUT
+            echo "Triggered by tag push: $version"
+            exit 0
+          }
           $match = Select-String -Path pubspec.yaml -Pattern '^version:' | Select-Object -First 1
           if (-not $match) {
             throw "Could not read version from pubspec.yaml"
@@ -44,6 +59,7 @@ jobs:
           echo "Using pubspec version: $version"
 
       - name: Ensure tag does not exist
+        if: github.event_name == 'workflow_dispatch'
         shell: pwsh
         run: |
           $tag = "${{ steps.get_tag.outputs.tag_name }}"
