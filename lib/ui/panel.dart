@@ -936,6 +936,19 @@ class _ControlPanelState extends State<ControlPanel> {
                 _s.glassTint = 1 - v;
                 _commit();
               }, percent: true),
+              // 透明度 100% = 染色 0 = 色板 alpha 0：此时"卡片底色"整组
+              // （含莫奈取色）都不可能有可见效果。没有提示的话，用户会以为
+              // 那两组的开关坏了。
+              if (_s.material == 'acrylic' && _s.glassTint < 0.1)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                      '染色到 0 时卡片完全透明：下面「卡片底色」那一组'
+                      '（含莫奈取色）都不会有可见效果。想看到底色，'
+                      '把这个「透明度」往回调一些。',
+                      style: TextStyle(
+                          fontSize: 10, color: _c.accent, height: 1.5)),
+                ),
               _slider('模糊强度', _s.glassBlur, 0, 40, 1, (v) {
                 _s.glassBlur = v;
                 _commit();
@@ -991,6 +1004,17 @@ class _ControlPanelState extends State<ControlPanel> {
           title: '卡片底色',
           icon: Icons.color_lens_outlined,
           children: [
+            // 用户点开关没反应时，目光就在这里，提示放这里才救得了
+            if (_s.material == 'acrylic' && _s.glassTint < 0.1)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text(
+                    '当前「透明度」是 100%（染色 0），卡片完全透明，'
+                    '这一组设置（含莫奈取色）都不会显示出来——'
+                    '先去上面「卡片材质」里把透明度调低一点。',
+                    style: TextStyle(
+                        fontSize: 10, color: _c.accent, height: 1.5)),
+              ),
             _switch('从壁纸取色（莫奈取色）', _s.autoColorFromWallpaper, (v) {
               _s.autoColorFromWallpaper = v;
               _commit();
@@ -1001,6 +1025,53 @@ class _ControlPanelState extends State<ControlPanel> {
               '底色跟着换。关掉立刻退回你手选的颜色，设置不会丢。',
               style: TextStyle(fontSize: 10, color: _c.ink30, height: 1.5),
             ),
+            // 取色结果：Material You 给的是一套方案而不是唯一答案，
+            // 摆出来让用户挑（选中项记在 settings.paletteIndex）。
+            if (_s.autoColorFromWallpaper)
+              ValueListenableBuilder<List<Color>>(
+                valueListenable: Wallpaper.palette,
+                builder: (context, colors, _) {
+                  if (colors.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 4),
+                      child: Text('取色结果还没出来（要先抓壁纸、模糊，再算色）',
+                          style: TextStyle(fontSize: 10, color: _c.ink30)),
+                    );
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 10, bottom: 4),
+                    child: Row(children: [
+                      Text('取色结果',
+                          style: TextStyle(fontSize: 10.5, color: _c.ink54)),
+                      const SizedBox(width: 10),
+                      for (var i = 0; i < colors.length; i++)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: GestureDetector(
+                            onTap: () {
+                              _s.paletteIndex = i;
+                              _commit();
+                            },
+                            child: Container(
+                              width: 26,
+                              height: 26,
+                              decoration: BoxDecoration(
+                                color: colors[i],
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: _s.paletteIndex == i
+                                      ? _c.accent
+                                      : _c.cardBorder,
+                                  width: _s.paletteIndex == i ? 2 : 1,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ]),
+                  );
+                },
+              ),
             const SizedBox(height: 4),
             _switch('文字颜色也用取色（莫奈取色）', _s.autoForegroundFromWallpaper, (v) {
               _s.autoForegroundFromWallpaper = v;
